@@ -507,32 +507,17 @@ export default function Home() {
 
         {isAuthenticated && user && (
           <div className="sidebar-footer">
-            {/* Token Balance Bar */}
+            {/* Token Balance */}
             <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Token còn lại</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Token</span>
                 <span style={{
-                  fontSize: 12,
+                  fontSize: 13,
                   fontWeight: 600,
-                  color: (user.tokenBalance || 0) < 1000 ? '#ef4444' : (user.tokenBalance || 0) < 5000 ? '#f59e0b' : '#22c55e'
+                  color: (user.tokenBalance || 0) < 1000 ? '#ef4444' : (user.tokenBalance || 0) < 5000 ? '#f59e0b' : '#8b5cf6'
                 }}>
-                  {(user.tokenBalance || 0).toLocaleString()} / {(user.tokenLimit || 0).toLocaleString()}
+                  {(user.tokenBalance || 0).toLocaleString()}
                 </span>
-              </div>
-              <div style={{
-                width: '100%',
-                height: 4,
-                background: 'var(--bg-tertiary)',
-                borderRadius: 2,
-                overflow: 'hidden'
-              }}>
-                <div style={{
-                  width: `${Math.min(100, ((user.tokenBalance || 0) / Math.max(1, user.tokenLimit || 1)) * 100)}%`,
-                  height: '100%',
-                  background: (user.tokenBalance || 0) < 1000 ? '#ef4444' : (user.tokenBalance || 0) < 5000 ? '#f59e0b' : '#22c55e',
-                  borderRadius: 2,
-                  transition: 'width 0.3s ease'
-                }} />
               </div>
               {(user.tokenBalance || 0) < 5000 && (
                 <a
@@ -1208,6 +1193,103 @@ export default function Home() {
   )
 }
 
+// Google Sign-In Button Component
+const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || ''
+
+// Store callback globally to avoid re-initialization
+let googleCallbackRef: ((credential: string) => void) | null = null
+
+function GoogleSignInButton({
+  onSuccess,
+  onError,
+  disabled,
+}: {
+  onSuccess: (credential: string) => void
+  onError: (error: string) => void
+  disabled?: boolean
+}) {
+  const buttonRef = useRef<HTMLDivElement>(null)
+  const [isLoaded, setIsLoaded] = useState(false)
+  const initializedRef = useRef(false)
+
+  // Update callback ref when onSuccess changes
+  useEffect(() => {
+    googleCallbackRef = onSuccess
+  }, [onSuccess])
+
+  useEffect(() => {
+    // Load Google Identity Services script
+    if (typeof window !== 'undefined' && !window.google) {
+      const script = document.createElement('script')
+      script.src = 'https://accounts.google.com/gsi/client'
+      script.async = true
+      script.defer = true
+      script.onload = () => setIsLoaded(true)
+      document.head.appendChild(script)
+    } else if (window.google) {
+      setIsLoaded(true)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!isLoaded || !GOOGLE_CLIENT_ID || !buttonRef.current || initializedRef.current) return
+
+    try {
+      window.google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: (response: { credential: string }) => {
+          if (response.credential && googleCallbackRef) {
+            googleCallbackRef(response.credential)
+          }
+        },
+      })
+
+      window.google.accounts.id.renderButton(buttonRef.current, {
+        theme: 'outline',
+        size: 'large',
+        width: '320',
+        text: 'continue_with',
+        shape: 'rectangular',
+      })
+
+      initializedRef.current = true
+    } catch (err) {
+      onError('Failed to initialize Google Sign-In')
+    }
+  }, [isLoaded, onError])
+
+  if (!GOOGLE_CLIENT_ID) {
+    return null // Don't show button if no client ID
+  }
+
+  return (
+    <div
+      ref={buttonRef}
+      style={{
+        display: 'flex',
+        justifyContent: 'center',
+        opacity: disabled ? 0.5 : 1,
+        pointerEvents: disabled ? 'none' : 'auto',
+      }}
+    />
+  )
+}
+
+// Declare Google type for TypeScript
+declare global {
+  interface Window {
+    google: {
+      accounts: {
+        id: {
+          initialize: (config: { client_id: string; callback: (response: { credential: string }) => void }) => void
+          renderButton: (element: HTMLElement, config: { theme: string; size: string; width?: string; text?: string; shape?: string }) => void
+          prompt: () => void
+        }
+      }
+    }
+  }
+}
+
 // Auth Modal Component
 function AuthModal({
   isOpen,
@@ -1221,37 +1303,184 @@ function AuthModal({
   const [mode, setMode] = useState(initialMode)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [name, setName] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const { login, register } = useAuth()
+  const [verificationMode, setVerificationMode] = useState(false)
+  const [verificationCode, setVerificationCode] = useState('')
+  const [resendCooldown, setResendCooldown] = useState(0)
+  const { login, register, verifyEmail, resendVerification, loginWithGoogle } = useAuth()
 
   useEffect(() => {
     setMode(initialMode)
   }, [initialMode])
+
+  // Handle Google Sign-In success
+  const handleGoogleSuccess = async (credential: string) => {
+    setLoading(true)
+    setError('')
+    try {
+      await loginWithGoogle(credential)
+      onClose()
+      resetForm()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Google login failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Cooldown timer for resend
+  useEffect(() => {
+    if (resendCooldown > 0) {
+      const timer = setTimeout(() => setResendCooldown(resendCooldown - 1), 1000)
+      return () => clearTimeout(timer)
+    }
+  }, [resendCooldown])
 
   if (!isOpen) return null
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+
+    // Validate confirm password for register
+    if (mode === 'register' && password !== confirmPassword) {
+      setError('Mật khẩu xác nhận không khớp')
+      return
+    }
+
     setLoading(true)
 
     try {
       if (mode === 'login') {
         await login(email, password)
+        onClose()
+        resetForm()
       } else {
-        await register(email, password, name || undefined)
+        const response = await register(email, password, name || undefined)
+        if (response.requiresVerification) {
+          // Switch to verification mode
+          setVerificationMode(true)
+          setResendCooldown(60)
+        } else {
+          // Direct login (no verification needed)
+          onClose()
+          resetForm()
+        }
       }
-      onClose()
-      setEmail('')
-      setPassword('')
-      setName('')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred')
+      const errorMessage = err instanceof Error ? err.message : 'An error occurred'
+      // Check if login failed due to unverified email
+      if (errorMessage.includes('verify') || errorMessage.includes('verification')) {
+        setVerificationMode(true)
+        setResendCooldown(0)
+      }
+      setError(errorMessage)
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleVerify = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+    setLoading(true)
+
+    try {
+      await verifyEmail(email, verificationCode)
+      onClose()
+      resetForm()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Verification failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleResendCode = async () => {
+    if (resendCooldown > 0) return
+    setError('')
+    setLoading(true)
+
+    try {
+      await resendVerification(email)
+      setResendCooldown(60)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to resend code')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const resetForm = () => {
+    setEmail('')
+    setPassword('')
+    setConfirmPassword('')
+    setName('')
+    setVerificationCode('')
+    setVerificationMode(false)
+    setError('')
+  }
+
+  // Verification form
+  if (verificationMode) {
+    return (
+      <div className="modal-overlay" onClick={onClose}>
+        <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <h2 className="modal-title">Xác thực email</h2>
+          <p className="modal-subtitle">
+            Mã xác thực đã được gửi đến <strong>{email}</strong>
+          </p>
+
+          <form onSubmit={handleVerify}>
+            <input
+              type="text"
+              className="modal-input"
+              placeholder="Nhập mã 6 số"
+              value={verificationCode}
+              onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              required
+              maxLength={6}
+              style={{ textAlign: 'center', fontSize: 24, letterSpacing: 8 }}
+            />
+
+            {error && <div className="modal-error">{error}</div>}
+
+            <button type="submit" className="modal-btn" disabled={loading || verificationCode.length !== 6}>
+              {loading ? 'Đang xác thực...' : 'Xác thực'}
+            </button>
+          </form>
+
+          <p style={{ textAlign: 'center', marginTop: 20, fontSize: 14, color: 'var(--text-secondary)' }}>
+            Không nhận được mã?{' '}
+            <span
+              className="modal-link"
+              onClick={handleResendCode}
+              style={{
+                opacity: resendCooldown > 0 ? 0.5 : 1,
+                cursor: resendCooldown > 0 ? 'default' : 'pointer'
+              }}
+            >
+              {resendCooldown > 0 ? `Gửi lại (${resendCooldown}s)` : 'Gửi lại mã'}
+            </span>
+          </p>
+
+          <p style={{ textAlign: 'center', marginTop: 12, fontSize: 13 }}>
+            <span
+              className="modal-link"
+              onClick={() => {
+                setVerificationMode(false)
+                setError('')
+              }}
+            >
+              ← Quay lại đăng ký
+            </span>
+          </p>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -1285,12 +1514,24 @@ function AuthModal({
           <input
             type="password"
             className="modal-input"
-            placeholder="Password"
+            placeholder="Mật khẩu"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            minLength={6}
+            minLength={8}
           />
+
+          {mode === 'register' && (
+            <input
+              type="password"
+              className="modal-input"
+              placeholder="Xác nhận mật khẩu"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              required
+              minLength={8}
+            />
+          )}
 
           {error && <div className="modal-error">{error}</div>}
 
@@ -1304,6 +1545,16 @@ function AuthModal({
               : 'Create account'}
           </button>
         </form>
+
+        {/* Divider */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '20px 0' }}>
+          <div style={{ flex: 1, height: 1, background: 'var(--border-color)' }} />
+          <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>hoặc</span>
+          <div style={{ flex: 1, height: 1, background: 'var(--border-color)' }} />
+        </div>
+
+        {/* Google Sign In Button */}
+        <GoogleSignInButton onSuccess={handleGoogleSuccess} onError={setError} disabled={loading} />
 
         <p style={{ textAlign: 'center', marginTop: 20, fontSize: 14, color: 'var(--text-secondary)' }}>
           {mode === 'login' ? "Don't have an account? " : 'Already have an account? '}

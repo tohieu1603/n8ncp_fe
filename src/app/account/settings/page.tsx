@@ -3,14 +3,15 @@
 import { useState } from 'react'
 import { User, Bell, Shield, Trash2, Save, Check, AlertTriangle } from 'lucide-react'
 import { useAuth } from '@/contexts/auth-context'
-import { updateProfile } from '@/lib/api'
+import { updateProfile, deactivateAccount } from '@/lib/api'
 
 export default function SettingsPage() {
-  const { user, refreshUser } = useAuth()
+  const { user, refreshUser, logout } = useAuth()
   const [name, setName] = useState(user?.name || '')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   const handleSave = async () => {
     setSaving(true)
@@ -28,8 +29,17 @@ export default function SettingsPage() {
   }
 
   const handleDeleteAccount = async () => {
-    alert('Account deletion is not yet implemented')
-    setShowDeleteConfirm(false)
+    setDeleting(true)
+    try {
+      await deactivateAccount()
+      logout()
+    } catch (error) {
+      console.error('Failed to delete account:', error)
+      alert('Không thể xóa tài khoản. Vui lòng thử lại.')
+    } finally {
+      setDeleting(false)
+      setShowDeleteConfirm(false)
+    }
   }
 
   return (
@@ -187,15 +197,17 @@ export default function SettingsPage() {
             <div className="flex gap-3">
               <button
                 onClick={() => setShowDeleteConfirm(false)}
-                className="flex-1 py-3 bg-[#1a1a22] text-[#a0a0a8] font-semibold rounded-xl hover:bg-[#222230] hover:text-[#f5f5f5] transition-colors"
+                disabled={deleting}
+                className="flex-1 py-3 bg-[#1a1a22] text-[#a0a0a8] font-semibold rounded-xl hover:bg-[#222230] hover:text-[#f5f5f5] transition-colors disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 onClick={handleDeleteAccount}
-                className="flex-1 py-3 bg-red-600 text-white font-semibold rounded-xl hover:bg-red-700 transition-colors"
+                disabled={deleting}
+                className="flex-1 py-3 bg-red-600 text-white font-semibold rounded-xl hover:bg-red-700 transition-colors disabled:opacity-50"
               >
-                Yes, Delete
+                {deleting ? 'Đang xử lý...' : 'Yes, Delete'}
               </button>
             </div>
           </div>

@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { Coins, QrCode, Clock, RefreshCw, AlertCircle } from 'lucide-react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { Coins, Clock, RefreshCw, AlertCircle, CheckCircle } from 'lucide-react'
 import { useAuth } from '@/contexts/auth-context'
-import { getPaymentHistory, createPayment, PaymentHistory } from '@/lib/api'
+import { getPaymentHistory, createPayment, checkPaymentStatus, PaymentHistory } from '@/lib/api'
 
 // Giá: 1 token = 1 VND
 const TOKEN_PRICE = 1
+const POLL_INTERVAL = 3000 // 3 seconds
 
 export default function BillingPage() {
   const { user, refreshUser } = useAuth()
@@ -22,6 +23,69 @@ export default function BillingPage() {
   } | null>(null)
   const [processing, setProcessing] = useState(false)
   const [error, setError] = useState<string>('')
+  const [paymentStatus, setPaymentStatus] = useState<'pending' | 'completed' | 'expired'>('pending')
+  const [timeLeft, setTimeLeft] = useState(15 * 60) // 15 minutes in seconds
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const countdownRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
+      if (countdownRef.current) clearInterval(countdownRef.current)
+    }
+  }, [])
+
+  // Poll payment status
+  const startPolling = useCallback((transactionId: string) => {
+    // Clear existing intervals
+    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
+    if (countdownRef.current) clearInterval(countdownRef.current)
+
+    setPaymentStatus('pending')
+    setTimeLeft(15 * 60)
+
+    // Start countdown
+    countdownRef.current = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          setPaymentStatus('expired')
+          if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
+          if (countdownRef.current) clearInterval(countdownRef.current)
+          return 0
+        }
+        return prev - 1
+      })
+    }, 1000)
+
+    // Start polling
+    pollIntervalRef.current = setInterval(async () => {
+      try {
+        const result = await checkPaymentStatus(transactionId)
+        if (result.status === 'completed') {
+          setPaymentStatus('completed')
+          if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
+          if (countdownRef.current) clearInterval(countdownRef.current)
+          // Refresh user data to update token balance
+          await refreshUser()
+          loadPayments()
+        }
+      } catch (err) {
+        console.error('Failed to check payment status:', err)
+      }
+    }, POLL_INTERVAL)
+  }, [refreshUser])
+
+  // Stop polling when modal closes
+  const handleCloseModal = () => {
+    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
+    if (countdownRef.current) clearInterval(countdownRef.current)
+    setShowPaymentModal(false)
+    setPaymentData(null)
+    setPaymentStatus('pending')
+    loadPayments()
+    refreshUser()
+  }
 
   useEffect(() => {
     loadPayments()
@@ -74,6 +138,8 @@ export default function BillingPage() {
         amount: getAmount(),
       })
       setPaymentData(result)
+      // Start polling for payment status
+      startPolling(result.transactionId)
     } catch (error) {
       console.error('Failed to create payment:', error)
       setError('Không thể tạo thanh toán. Vui lòng thử lại.')
@@ -81,6 +147,13 @@ export default function BillingPage() {
     } finally {
       setProcessing(false)
     }
+  }
+
+  // Format time left as MM:SS
+  const formatTimeLeft = (seconds: number) => {
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return `${mins}:${secs.toString().padStart(2, '0')}`
   }
 
   const formatVND = (amount: number) => {
@@ -239,11 +312,39 @@ export default function BillingPage() {
             {payments.map((payment) => (
               <div
                 key={payment.id}
-                className="flex items-center justify-between p-4 bg-[#111117] rounded-xl border border-[rgba(255,255,255,0.08)]"
+                className={`flex items-center justify-between p-4 bg-[#111117] rounded-xl border border-[rgba(255,255,255,0.08)] ${
+                  payment.status === 'pending' && payment.qrCode ? 'cursor-pointer hover:border-[#8b5cf6]/50' : ''
+                }`}
+                onClick={() => {
+                  if (payment.status === 'pending' && payment.qrCode && payment.transactionId) {
+                    // Open modal with this payment's QR
+                    setPaymentData({
+                      qrCode: payment.qrCode,
+                      amount: payment.amount,
+                      transactionId: payment.transactionId,
+                      expiresAt: payment.expiresAt || '',
+                    })
+                    // Calculate time left
+                    if (payment.expiresAt) {
+                      const remaining = Math.max(0, Math.floor((new Date(payment.expiresAt).getTime() - Date.now()) / 1000))
+                      setTimeLeft(remaining)
+                      if (remaining > 0) {
+                        setPaymentStatus('pending')
+                        startPolling(payment.transactionId)
+                      } else {
+                        setPaymentStatus('expired')
+                      }
+                    }
+                    setShowPaymentModal(true)
+                  }
+                }}
               >
                 <div>
                   <p className="font-semibold text-[#f5f5f5]">{payment.description}</p>
                   <p className="text-sm text-[#6b6b75] mt-1">{formatDate(payment.createdAt)}</p>
+                  {payment.status === 'pending' && payment.qrCode && (
+                    <p className="text-xs text-[#8b5cf6] mt-1">Nhấn để xem QR thanh toán</p>
+                  )}
                 </div>
                 <div className="text-right">
                   <span
@@ -252,10 +353,12 @@ export default function BillingPage() {
                         ? 'bg-[rgba(34,197,94,0.15)] text-green-400'
                         : payment.status === 'pending'
                         ? 'bg-[rgba(245,158,11,0.15)] text-amber-400'
+                        : payment.status === 'expired'
+                        ? 'bg-[rgba(107,107,117,0.15)] text-[#6b6b75]'
                         : 'bg-[rgba(239,68,68,0.15)] text-red-400'
                     }`}
                   >
-                    {payment.status === 'completed' ? 'Thành công' : payment.status === 'pending' ? 'Đang xử lý' : 'Thất bại'}
+                    {payment.status === 'completed' ? 'Thành công' : payment.status === 'pending' ? 'Chờ thanh toán' : payment.status === 'expired' ? 'Hết hạn' : 'Thất bại'}
                   </span>
                   <p className="font-bold text-[#f5f5f5] mt-1">{formatVND(payment.amount)}</p>
                 </div>
@@ -269,7 +372,7 @@ export default function BillingPage() {
       {showPaymentModal && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
-          onClick={() => !processing && setShowPaymentModal(false)}
+          onClick={() => !processing && handleCloseModal()}
         >
           <div
             className="w-full max-w-sm bg-[#111117] border border-[rgba(255,255,255,0.08)] rounded-2xl p-6 text-center"
@@ -277,7 +380,7 @@ export default function BillingPage() {
           >
             <h2 className="text-xl font-bold text-[#f5f5f5] mb-2">Thanh toán</h2>
             <p className="text-[#a0a0a8] mb-6">
-              Nạp {parseInt(tokenAmount).toLocaleString()} token
+              Nạp {paymentData?.amount?.toLocaleString() || parseInt(tokenAmount).toLocaleString()} token
             </p>
 
             {processing ? (
@@ -285,10 +388,39 @@ export default function BillingPage() {
                 <div className="w-10 h-10 mx-auto mb-4 border-3 border-[#222230] border-t-[#8b5cf6] rounded-full animate-spin" />
                 <p className="text-[#a0a0a8]">Đang tạo mã QR...</p>
               </div>
+            ) : paymentStatus === 'completed' ? (
+              <div className="py-8">
+                <div className="w-16 h-16 mx-auto mb-4 flex items-center justify-center bg-green-500/20 rounded-full">
+                  <CheckCircle size={32} className="text-green-400" />
+                </div>
+                <h3 className="text-xl font-bold text-green-400 mb-2">Thanh toán thành công!</h3>
+                <p className="text-[#a0a0a8] mb-4">
+                  Đã cộng <span className="text-[#8b5cf6] font-semibold">{paymentData?.amount.toLocaleString()} token</span> vào tài khoản
+                </p>
+                <p className="text-sm text-[#6b6b75]">
+                  Số dư hiện tại: <span className="text-[#f5f5f5] font-semibold">{user?.tokenBalance?.toLocaleString() || 0} token</span>
+                </p>
+              </div>
+            ) : paymentStatus === 'expired' ? (
+              <div className="py-8">
+                <div className="w-16 h-16 mx-auto mb-4 flex items-center justify-center bg-red-500/20 rounded-full">
+                  <AlertCircle size={32} className="text-red-400" />
+                </div>
+                <h3 className="text-xl font-bold text-red-400 mb-2">Đã hết hạn</h3>
+                <p className="text-[#a0a0a8]">
+                  Mã QR đã hết hạn. Vui lòng tạo giao dịch mới.
+                </p>
+              </div>
             ) : paymentData ? (
               <>
-                <div className="inline-flex items-center justify-center p-6 mb-6 bg-white rounded-2xl">
-                  <QrCode size={160} className="text-slate-800" />
+                <div className="inline-flex items-center justify-center p-4 mb-4 bg-white rounded-2xl">
+                  <img
+                    src={paymentData.qrCode}
+                    alt="QR Code thanh toán"
+                    width={200}
+                    height={200}
+                    className="rounded-lg"
+                  />
                 </div>
 
                 <p className="text-sm text-[#a0a0a8] mb-4">Quét mã bằng ứng dụng ngân hàng</p>
@@ -306,14 +438,21 @@ export default function BillingPage() {
                     <span className="text-[#6b6b75]">Mã GD:</span>
                     <code className="text-xs font-mono text-[#8b5cf6]">{paymentData.transactionId}</code>
                   </div>
-                  <div className="flex items-center justify-center gap-2 pt-3 border-t border-[rgba(255,255,255,0.08)] text-amber-400">
-                    <Clock size={14} />
-                    <span className="text-sm font-medium">Hết hạn sau 15 phút</span>
+                  <div className="flex items-center justify-center gap-2 pt-3 border-t border-[rgba(255,255,255,0.08)]">
+                    <Clock size={14} className={timeLeft < 60 ? 'text-red-400' : 'text-amber-400'} />
+                    <span className={`text-sm font-medium ${timeLeft < 60 ? 'text-red-400' : 'text-amber-400'}`}>
+                      Hết hạn sau {formatTimeLeft(timeLeft)}
+                    </span>
                   </div>
                 </div>
 
+                <div className="flex items-center justify-center gap-2 mb-4 text-[#6b6b75]">
+                  <div className="w-2 h-2 bg-amber-400 rounded-full animate-pulse" />
+                  <span className="text-xs">Đang chờ thanh toán...</span>
+                </div>
+
                 <p className="text-xs text-[#6b6b75] mb-4">
-                  Thanh toán qua <strong className="text-[#a0a0a8]">SePay</strong> • Token được cộng trong 1-2 phút
+                  Thanh toán qua <strong className="text-[#a0a0a8]">SePay</strong> • Tự động cập nhật khi hoàn thành
                 </p>
               </>
             ) : (
@@ -323,15 +462,14 @@ export default function BillingPage() {
             )}
 
             <button
-              onClick={() => {
-                setShowPaymentModal(false)
-                setPaymentData(null)
-                loadPayments()
-                refreshUser()
-              }}
-              className="w-full py-3 bg-[#1a1a22] text-[#a0a0a8] font-semibold rounded-xl hover:bg-[#222230] hover:text-[#f5f5f5] transition-colors"
+              onClick={handleCloseModal}
+              className={`w-full py-3 font-semibold rounded-xl transition-colors ${
+                paymentStatus === 'completed'
+                  ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30'
+                  : 'bg-[#1a1a22] text-[#a0a0a8] hover:bg-[#222230] hover:text-[#f5f5f5]'
+              }`}
             >
-              Đóng
+              {paymentStatus === 'completed' ? 'Hoàn tất' : 'Đóng'}
             </button>
           </div>
         </div>

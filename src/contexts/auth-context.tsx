@@ -11,9 +11,13 @@ import {
   User,
   login as apiLogin,
   register as apiRegister,
+  verifyEmail as apiVerifyEmail,
+  resendVerification as apiResendVerification,
+  loginWithGoogle as apiLoginWithGoogle,
   getMe,
   clearAuth,
   getAuthToken,
+  RegisterResponse,
 } from '@/lib/api'
 
 interface AuthContextType {
@@ -21,7 +25,10 @@ interface AuthContextType {
   isLoading: boolean
   isAuthenticated: boolean
   login: (email: string, password: string) => Promise<void>
-  register: (email: string, password: string, name?: string) => Promise<void>
+  register: (email: string, password: string, name?: string) => Promise<RegisterResponse>
+  verifyEmail: (email: string, code: string) => Promise<void>
+  resendVerification: (email: string) => Promise<void>
+  loginWithGoogle: (credential: string) => Promise<void>
   logout: () => void
   refreshUser: () => Promise<void>
 }
@@ -60,15 +67,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const login = async (email: string, password: string) => {
-    const response = await apiLogin(email, password)
-    // After login, fetch full user data
+    await apiLogin(email, password)
     const userData = await getMe()
     setUser(userData)
   }
 
   const register = async (email: string, password: string, name?: string) => {
     const response = await apiRegister(email, password, name)
-    // After register, fetch full user data
+    // If verification required, don't fetch user yet
+    if (response.requiresVerification) {
+      return response
+    }
+    // If no verification needed, fetch user data
+    const userData = await getMe()
+    setUser(userData)
+    return response
+  }
+
+  const verifyEmail = async (email: string, code: string) => {
+    await apiVerifyEmail(email, code)
+    const userData = await getMe()
+    setUser(userData)
+  }
+
+  const resendVerification = async (email: string) => {
+    await apiResendVerification(email)
+  }
+
+  const loginWithGoogle = async (credential: string) => {
+    await apiLoginWithGoogle(credential)
     const userData = await getMe()
     setUser(userData)
   }
@@ -86,6 +113,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAuthenticated: !!user,
         login,
         register,
+        verifyEmail,
+        resendVerification,
+        loginWithGoogle,
         logout,
         refreshUser,
       }}
