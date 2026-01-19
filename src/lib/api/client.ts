@@ -38,6 +38,14 @@ interface ApiResponse<T> {
   message?: string
 }
 
+// Auth error class for 401 responses
+export class AuthenticationError extends Error {
+  constructor(message: string = 'Authentication required') {
+    super(message)
+    this.name = 'AuthenticationError'
+  }
+}
+
 // Generic fetch helper
 export async function fetchApi<T>(
   endpoint: string,
@@ -59,6 +67,15 @@ export async function fetchApi<T>(
     headers,
   })
 
+  // Handle 401 Unauthorized - clear auth and redirect to login
+  if (response.status === 401) {
+    clearAuth()
+    if (typeof window !== 'undefined') {
+      window.location.href = '/auth/login?expired=1'
+    }
+    throw new AuthenticationError('Session expired. Please login again.')
+  }
+
   const json: ApiResponse<T> = await response.json()
 
   if (!response.ok || !json.success) {
@@ -79,4 +96,16 @@ export class InsufficientTokensError extends Error {
     super(`Không đủ token. Còn lại: ${remaining}, cần: ${required}. Vui lòng nạp thêm.`)
     this.name = 'InsufficientTokensError'
   }
+}
+
+// API client object with HTTP methods
+export const apiClient = {
+  get: <T>(endpoint: string) => fetchApi<T>(endpoint, { method: 'GET' }),
+  post: <T>(endpoint: string, data: unknown) =>
+    fetchApi<T>(endpoint, { method: 'POST', body: JSON.stringify(data) }),
+  put: <T>(endpoint: string, data: unknown) =>
+    fetchApi<T>(endpoint, { method: 'PUT', body: JSON.stringify(data) }),
+  patch: <T>(endpoint: string, data: unknown) =>
+    fetchApi<T>(endpoint, { method: 'PATCH', body: JSON.stringify(data) }),
+  delete: <T>(endpoint: string) => fetchApi<T>(endpoint, { method: 'DELETE' }),
 }

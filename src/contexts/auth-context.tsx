@@ -24,11 +24,11 @@ interface AuthContextType {
   user: User | null
   isLoading: boolean
   isAuthenticated: boolean
-  login: (email: string, password: string) => Promise<void>
+  login: (email: string, password: string) => Promise<User>
   register: (email: string, password: string, name?: string) => Promise<RegisterResponse>
-  verifyEmail: (email: string, code: string) => Promise<void>
+  verifyEmail: (email: string, code: string) => Promise<User>
   resendVerification: (email: string) => Promise<void>
-  loginWithGoogle: (credential: string) => Promise<void>
+  loginWithGoogle: (credential: string) => Promise<User>
   logout: () => void
   refreshUser: () => Promise<void>
 }
@@ -66,10 +66,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     initAuth()
   }, [])
 
-  const login = async (email: string, password: string) => {
+  const login = async (email: string, password: string): Promise<User> => {
     await apiLogin(email, password)
     const userData = await getMe()
     setUser(userData)
+    return userData
   }
 
   const register = async (email: string, password: string, name?: string) => {
@@ -84,20 +85,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return response
   }
 
-  const verifyEmail = async (email: string, code: string) => {
+  const verifyEmail = async (email: string, code: string): Promise<User> => {
     await apiVerifyEmail(email, code)
     const userData = await getMe()
     setUser(userData)
+    return userData
   }
 
   const resendVerification = async (email: string) => {
     await apiResendVerification(email)
   }
 
-  const loginWithGoogle = async (credential: string) => {
+  const loginWithGoogle = async (credential: string): Promise<User> => {
     await apiLoginWithGoogle(credential)
     const userData = await getMe()
     setUser(userData)
+    return userData
   }
 
   const logout = () => {

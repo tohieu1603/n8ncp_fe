@@ -8,6 +8,7 @@ export interface User {
   id: string
   email: string
   name: string | null
+  role: 'user' | 'admin'
   creditsUsed: number
   totalSpentUsd: number
   isPro: boolean
