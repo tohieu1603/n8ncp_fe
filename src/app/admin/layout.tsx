@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { ConfigProvider, Layout, Menu, theme, Spin, message, Button } from 'antd'
+import { ConfigProvider, Layout, Menu, theme, Spin, message, Button, Modal } from 'antd'
 import {
   UserOutlined,
   FileTextOutlined,
@@ -66,8 +66,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }
 
   const handleLogout = () => {
-    logout()
-    router.push('/auth/login')
+    Modal.confirm({
+      title: 'Xác nhận đăng xuất',
+      content: 'Bạn có chắc chắn muốn đăng xuất?',
+      okText: 'Đăng xuất',
+      cancelText: 'Hủy',
+      okButtonProps: { danger: true },
+      onOk: () => {
+        logout()
+        router.push('/auth/login')
+      },
+    })
   }
 
   if (isLoading) {

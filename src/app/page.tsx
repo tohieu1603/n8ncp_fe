@@ -128,6 +128,7 @@ const SUGGESTIONS = [
 
 export default function Home() {
   const { user, isAuthenticated, isLoading: authLoading, logout, refreshUser } = useAuth()
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [sessions, setSessions] = useState<ChatSession[]>([])
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
@@ -568,7 +569,7 @@ export default function Home() {
                     <Settings size={16} />
                     Cài đặt tài khoản
                   </a>
-                  <div className="dropdown-item dropdown-item-danger" onClick={logout}>
+                  <div className="dropdown-item dropdown-item-danger" onClick={() => setShowLogoutConfirm(true)}>
                     <LogOut size={16} />
                     Đăng xuất
                   </div>
@@ -1186,6 +1187,78 @@ export default function Home() {
         </div>
         )}
       </main>
+
+      {/* Logout Confirmation Modal */}
+      {showLogoutConfirm && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0,0,0,0.7)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+          }}
+          onClick={() => setShowLogoutConfirm(false)}
+        >
+          <div
+            style={{
+              background: '#1a1a22',
+              borderRadius: 12,
+              padding: 24,
+              maxWidth: 360,
+              width: '90%',
+              border: '1px solid rgba(255,255,255,0.1)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ margin: '0 0 8px', fontSize: 18, color: '#f5f5f5' }}>
+              Xác nhận đăng xuất
+            </h3>
+            <p style={{ margin: '0 0 20px', color: '#a0a0a8', fontSize: 14 }}>
+              Bạn có chắc chắn muốn đăng xuất?
+            </p>
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setShowLogoutConfirm(false)}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: 8,
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  background: 'transparent',
+                  color: '#a0a0a8',
+                  cursor: 'pointer',
+                  fontSize: 14,
+                }}
+              >
+                Hủy
+              </button>
+              <button
+                onClick={() => {
+                  logout()
+                  setShowLogoutConfirm(false)
+                }}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: 8,
+                  border: 'none',
+                  background: '#ef4444',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  fontSize: 14,
+                  fontWeight: 500,
+                }}
+              >
+                Đăng xuất
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   )

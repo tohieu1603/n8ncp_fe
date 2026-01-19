@@ -32,8 +32,10 @@ import {
   type UserFilters,
   type PaginationInfo,
 } from '@/lib/api'
+import { useAuth } from '@/contexts/auth-context'
 
 export default function UsersPage() {
+  const { user: currentUser } = useAuth()
   const [users, setUsers] = useState<AdminUser[]>([])
   const [pagination, setPagination] = useState<PaginationInfo>({
     page: 1,
@@ -84,7 +86,7 @@ export default function UsersPage() {
       message.success('Role updated')
       fetchUsers()
     } catch (error) {
-      message.error('Failed to update role')
+      message.error(error instanceof Error ? error.message : 'Failed to update role')
     }
   }
 
@@ -94,7 +96,7 @@ export default function UsersPage() {
       message.success(`User ${isActive ? 'activated' : 'deactivated'}`)
       fetchUsers()
     } catch (error) {
-      message.error('Failed to update status')
+      message.error(error instanceof Error ? error.message : 'Failed to update status')
     }
   }
 
@@ -122,18 +124,24 @@ export default function UsersPage() {
       dataIndex: 'role',
       key: 'role',
       width: 120,
-      render: (role: string, record) => (
-        <Select
-          value={role}
-          size="small"
-          style={{ width: 100 }}
-          onChange={(value) => handleRoleChange(record.id, value as 'user' | 'admin')}
-          options={[
-            { value: 'user', label: 'User' },
-            { value: 'admin', label: 'Admin' },
-          ]}
-        />
-      ),
+      render: (role: string, record) => {
+        const isSelf = currentUser?.id === record.id
+        return (
+          <Tooltip title={isSelf ? 'Cannot change your own role' : undefined}>
+            <Select
+              value={role}
+              size="small"
+              style={{ width: 100 }}
+              disabled={isSelf}
+              onChange={(value) => handleRoleChange(record.id, value as 'user' | 'admin')}
+              options={[
+                { value: 'user', label: 'User' },
+                { value: 'admin', label: 'Admin' },
+              ]}
+            />
+          </Tooltip>
+        )
+      },
     },
     {
       title: 'Status',
@@ -185,22 +193,35 @@ export default function UsersPage() {
       title: 'Actions',
       key: 'actions',
       width: 100,
-      render: (_, record) => (
-        <Popconfirm
-          title={record.isActive ? 'Deactivate user?' : 'Activate user?'}
-          onConfirm={() => handleStatusToggle(record.id, !record.isActive)}
-          okText="Yes"
-          cancelText="No"
-        >
-          <Button
-            size="small"
-            danger={record.isActive}
-            type={record.isActive ? 'default' : 'primary'}
+      render: (_, record) => {
+        const isSelf = currentUser?.id === record.id
+        // Don't allow deactivating yourself
+        if (isSelf && record.isActive) {
+          return (
+            <Tooltip title="Cannot deactivate your own account">
+              <Button size="small" disabled>
+                Deactivate
+              </Button>
+            </Tooltip>
+          )
+        }
+        return (
+          <Popconfirm
+            title={record.isActive ? 'Deactivate user?' : 'Activate user?'}
+            onConfirm={() => handleStatusToggle(record.id, !record.isActive)}
+            okText="Yes"
+            cancelText="No"
           >
-            {record.isActive ? 'Deactivate' : 'Activate'}
-          </Button>
-        </Popconfirm>
-      ),
+            <Button
+              size="small"
+              danger={record.isActive}
+              type={record.isActive ? 'default' : 'primary'}
+            >
+              {record.isActive ? 'Deactivate' : 'Activate'}
+            </Button>
+          </Popconfirm>
+        )
+      },
     },
   ]
 
