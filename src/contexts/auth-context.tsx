@@ -64,6 +64,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     initAuth()
+
+    // Listen for auth updates from TokenReceiver
+    const handleAuthUpdate = () => {
+      refreshUser()
+    }
+    window.addEventListener('auth-updated', handleAuthUpdate)
+
+    return () => {
+      window.removeEventListener('auth-updated', handleAuthUpdate)
+    }
   }, [])
 
   const login = async (email: string, password: string): Promise<User> => {

@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect } from 'react'
-import { useSearchParams, useRouter, usePathname } from 'next/navigation'
+import { useEffect, useRef } from 'react'
+import { useSearchParams, usePathname } from 'next/navigation'
 import { setAuthToken, getMe } from '@/lib/api'
 
 /**
@@ -10,12 +10,15 @@ import { setAuthToken, getMe } from '@/lib/api'
  */
 export function TokenReceiver() {
   const searchParams = useSearchParams()
-  const router = useRouter()
   const pathname = usePathname()
+  const processingRef = useRef(false)
 
   useEffect(() => {
     const token = searchParams.get('token')
-    if (!token) return
+    if (!token || processingRef.current) return
+
+    // Mark as processing to prevent duplicate runs
+    processingRef.current = true
 
     const handleToken = async () => {
       try {
@@ -23,24 +26,29 @@ export function TokenReceiver() {
         const user = await getMe()
         localStorage.setItem('user', JSON.stringify(user))
 
-        // Remove token from URL (security)
+        // Remove token from URL and redirect (no reload needed)
         const newUrl = new URL(window.location.href)
         newUrl.searchParams.delete('token')
-        router.replace(newUrl.pathname + newUrl.search || pathname)
+        const cleanUrl = newUrl.pathname + (newUrl.search || '')
 
-        // Reload to update auth state
-        window.location.reload()
+        // Use window.history to avoid triggering React re-renders
+        window.history.replaceState({}, '', cleanUrl || pathname)
+
+        // Dispatch custom event to notify auth context
+        window.dispatchEvent(new Event('auth-updated'))
       } catch (err) {
         console.error('Invalid token:', err)
         // Token không hợp lệ, xóa khỏi URL
         const newUrl = new URL(window.location.href)
         newUrl.searchParams.delete('token')
-        router.replace(newUrl.pathname + newUrl.search || pathname)
+        window.history.replaceState({}, '', newUrl.pathname + (newUrl.search || '') || pathname)
+      } finally {
+        processingRef.current = false
       }
     }
 
     handleToken()
-  }, [searchParams, router, pathname])
+  }, [searchParams, pathname])
 
   return null
 }
