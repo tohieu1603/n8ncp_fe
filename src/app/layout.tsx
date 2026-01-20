@@ -1,6 +1,8 @@
 import type { Metadata } from 'next'
+import { Suspense } from 'react'
 import './globals.css'
 import { AuthProvider } from '@/contexts/auth-context'
+import { TokenReceiver } from '@/components/token-receiver'
 
 export const metadata: Metadata = {
   title: 'AI Image Generator - ImageGen AI',
@@ -15,7 +17,12 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="antialiased">
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          <Suspense fallback={null}>
+            <TokenReceiver />
+          </Suspense>
+          {children}
+        </AuthProvider>
       </body>
     </html>
   )

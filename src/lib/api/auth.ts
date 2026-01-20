@@ -96,7 +96,9 @@ export async function loginWithGoogle(credential: string, clientId?: string): Pr
 }
 
 export function getGoogleAuthUrl(): string {
-  return `${getApiBaseUrl()}/api/auth/google`
+  // Pass current origin as redirect_uri so backend knows where to redirect after OAuth
+  const redirectUri = typeof window !== 'undefined' ? window.location.origin : ''
+  return `${getApiBaseUrl()}/api/auth/google?redirect_uri=${encodeURIComponent(redirectUri)}`
 }
 
 export async function getMe(): Promise<User> {

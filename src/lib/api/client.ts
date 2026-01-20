@@ -109,3 +109,43 @@ export const apiClient = {
     fetchApi<T>(endpoint, { method: 'PATCH', body: JSON.stringify(data) }),
   delete: <T>(endpoint: string) => fetchApi<T>(endpoint, { method: 'DELETE' }),
 }
+
+// Cross-domain navigation with token
+const PRODUCTION_URL = 'https://n8n.operis.vn'
+const LOCAL_URL = 'http://localhost:3000'
+
+/**
+ * Navigate to another domain with auth token
+ * @param path - Path to navigate to (e.g., '/', '/pricing')
+ * @param newTab - Open in new tab (default: false)
+ */
+export function navigateWithAuth(path: string = '/', newTab: boolean = false) {
+  const token = getAuthToken()
+  if (!token) {
+    console.warn('No auth token found')
+    return
+  }
+
+  const isLocalhost = typeof window !== 'undefined' && window.location.hostname === 'localhost'
+  const targetDomain = isLocalhost ? PRODUCTION_URL : LOCAL_URL
+  // Token trực tiếp trong URL: https://domain.com/path?token=xxx
+  const url = `${targetDomain}${path}${path.includes('?') ? '&' : '?'}token=${token}`
+
+  if (newTab) {
+    window.open(url, '_blank')
+  } else {
+    window.location.href = url
+  }
+}
+
+/**
+ * Get URL for cross-domain navigation with token
+ */
+export function getCrossDomainUrl(path: string = '/'): string | null {
+  const token = getAuthToken()
+  if (!token) return null
+
+  const isLocalhost = typeof window !== 'undefined' && window.location.hostname === 'localhost'
+  const targetDomain = isLocalhost ? PRODUCTION_URL : LOCAL_URL
+  return `${targetDomain}${path}${path.includes('?') ? '&' : '?'}token=${token}`
+}

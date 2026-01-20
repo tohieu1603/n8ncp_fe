@@ -20,7 +20,6 @@ import {
   Pencil,
   Loader2,
   DollarSign,
-  Lock,
   Crown,
   Scale,
   Trash2,
@@ -686,25 +685,16 @@ export default function Home() {
                             {categoryAgents.map((agent) => {
                               const Icon = AGENT_ICONS[agent.icon] || MessageSquare
                               const isPro = agent.tier === 'pro'
-                              const userHasPro = user?.isPro || false
-                              const isLocked = isPro && !userHasPro
 
                               return (
                                 <div
                                   key={agent.id}
-                                  className={`dropdown-item ${selectedAgent.id === agent.id ? 'active' : ''} ${isLocked ? 'locked' : ''}`}
+                                  className={`dropdown-item ${selectedAgent.id === agent.id ? 'active' : ''}`}
                                   onClick={() => {
-                                    if (isLocked) {
-                                      alert('Pro subscription required. Upgrade to unlock Pro agents.')
-                                      return
-                                    }
                                     setSelectedAgent(agent)
                                     setShowAgentMenu(false)
                                   }}
-                                  style={{
-                                    ...(selectedAgent.id === agent.id ? { background: 'var(--bg-hover)' } : {}),
-                                    ...(isLocked ? { opacity: 0.6, cursor: 'not-allowed' } : {}),
-                                  }}
+                                  style={selectedAgent.id === agent.id ? { background: 'var(--bg-hover)' } : {}}
                                 >
                                   <Icon size={16} />
                                   <div style={{ flex: 1 }}>
@@ -715,11 +705,11 @@ export default function Home() {
                                           fontSize: 9,
                                           padding: '2px 6px',
                                           borderRadius: 4,
-                                          background: userHasPro ? 'linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)' : 'var(--bg-tertiary)',
-                                          color: userHasPro ? '#000' : 'var(--text-tertiary)',
+                                          background: 'linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)',
+                                          color: '#000',
                                           fontWeight: 600,
                                         }}>
-                                          PRO
+                                          2X TOKEN
                                         </span>
                                       )}
                                     </div>
@@ -727,7 +717,6 @@ export default function Home() {
                                       {agent.description}
                                     </div>
                                   </div>
-                                  {isLocked && <Lock size={14} style={{ color: 'var(--text-tertiary)' }} />}
                                 </div>
                               )
                             })}
@@ -765,25 +754,16 @@ export default function Home() {
                       {AGENTS.filter(a => a.category === 'legal').map((agent) => {
                         const isSelected = selectedLegalAgent.id === agent.id
                         const isPro = agent.tier === 'pro'
-                        const userHasPro = user?.isPro || false
-                        const isLocked = isPro && !userHasPro
 
                         return (
                           <div
                             key={agent.id}
                             className={`dropdown-item ${isSelected ? 'active' : ''}`}
                             onClick={() => {
-                              if (isLocked) {
-                                window.location.href = '/account/billing'
-                                return
-                              }
                               setSelectedLegalAgent(agent)
                               setShowLegalMenu(false)
                             }}
-                            style={{
-                              ...(isSelected ? { background: 'var(--bg-hover)' } : {}),
-                              ...(isLocked ? { opacity: 0.6, cursor: 'pointer' } : {}),
-                            }}
+                            style={isSelected ? { background: 'var(--bg-hover)' } : {}}
                           >
                             <Scale size={16} style={isPro ? { color: '#fbbf24' } : {}} />
                             <div style={{ flex: 1 }}>
@@ -794,11 +774,11 @@ export default function Home() {
                                     fontSize: 9,
                                     padding: '2px 6px',
                                     borderRadius: 4,
-                                    background: userHasPro ? 'linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)' : 'var(--bg-tertiary)',
-                                    color: userHasPro ? '#000' : 'var(--text-tertiary)',
+                                    background: 'linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)',
+                                    color: '#000',
                                     fontWeight: 600,
                                   }}>
-                                    PRO
+                                    2X TOKEN
                                   </span>
                                 )}
                               </div>
@@ -806,7 +786,6 @@ export default function Home() {
                                 {agent.description}
                               </div>
                             </div>
-                            {isLocked && <Lock size={14} style={{ color: 'var(--text-tertiary)' }} />}
                           </div>
                         )
                       })}
@@ -877,32 +856,23 @@ export default function Home() {
                         )
                       })}
 
-                      {/* Pro Models */}
+                      {/* Pro Models (2x Token) */}
                       <div style={{ padding: '12px 14px 4px', fontSize: 11, fontWeight: 600, color: '#fbbf24', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 6 }}>
                         <Crown size={12} />
-                        Pro Models
+                        Pro Models (2x Token)
                       </div>
                       {IMAGE_MODELS.filter(m => m.tier === 'pro').map((model) => {
                         const isSelected = selectedImageModel.id === model.id
-                        const userHasPro = user?.isPro || false
-                        const isLocked = !userHasPro
 
                         return (
                           <div
                             key={model.id}
                             className={`dropdown-item ${isSelected ? 'active' : ''}`}
                             onClick={() => {
-                              if (isLocked) {
-                                window.location.href = '/account/billing'
-                                return
-                              }
                               setSelectedImageModel(model)
                               setShowModelMenu(false)
                             }}
-                            style={{
-                              ...(isSelected ? { background: 'var(--bg-hover)' } : {}),
-                              ...(isLocked ? { opacity: 0.6, cursor: 'pointer' } : {}),
-                            }}
+                            style={isSelected ? { background: 'var(--bg-hover)' } : {}}
                           >
                             <Sparkles size={16} style={{ color: '#fbbf24' }} />
                             <div style={{ flex: 1 }}>
@@ -912,11 +882,11 @@ export default function Home() {
                                   fontSize: 9,
                                   padding: '2px 6px',
                                   borderRadius: 4,
-                                  background: userHasPro ? 'linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)' : 'var(--bg-tertiary)',
-                                  color: userHasPro ? '#000' : 'var(--text-tertiary)',
+                                  background: 'linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)',
+                                  color: '#000',
                                   fontWeight: 600,
                                 }}>
-                                  PRO
+                                  2X TOKEN
                                 </span>
                                 <span style={{
                                   fontSize: 9,
@@ -933,7 +903,6 @@ export default function Home() {
                                 {model.description}
                               </div>
                             </div>
-                            {isLocked && <Lock size={14} style={{ color: 'var(--text-tertiary)' }} />}
                           </div>
                         )
                       })}
