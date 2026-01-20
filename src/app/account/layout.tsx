@@ -37,11 +37,13 @@ export default function AccountLayout({ children }: { children: React.ReactNode 
   useEffect(() => {
     const token = getAuthToken()
     if (!token) {
-      router.push('/')
+      // Redirect to login with return URL
+      const returnUrl = encodeURIComponent(pathname)
+      router.push(`/auth/login?returnUrl=${returnUrl}`)
       return
     }
     setIsLoading(false)
-  }, [router])
+  }, [router, pathname])
 
   if (isLoading) {
     return (

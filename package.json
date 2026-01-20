@@ -26,6 +26,11 @@
     "typescript": "^5.9.3"
   },
   "devDependencies": {
-    "@types/swagger-ui-react": "^5.18.0"
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/swagger-ui-react": "^5.18.0",
+    "@vitejs/plugin-react": "^5.1.2",
+    "jsdom": "^27.4.0",
+    "vitest": "^4.0.17"
   }
 }

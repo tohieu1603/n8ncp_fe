@@ -46,6 +46,14 @@ export class AuthenticationError extends Error {
   }
 }
 
+// Forbidden error class for 403 responses
+export class ForbiddenError extends Error {
+  constructor(message: string = 'Access denied') {
+    super(message)
+    this.name = 'ForbiddenError'
+  }
+}
+
 // Generic fetch helper
 export async function fetchApi<T>(
   endpoint: string,
@@ -71,9 +79,17 @@ export async function fetchApi<T>(
   if (response.status === 401) {
     clearAuth()
     if (typeof window !== 'undefined') {
-      window.location.href = '/auth/login?expired=1'
+      // Save current path to redirect back after login
+      const returnUrl = encodeURIComponent(window.location.pathname + window.location.search)
+      window.location.href = `/auth/login?expired=1&returnUrl=${returnUrl}`
     }
     throw new AuthenticationError('Session expired. Please login again.')
+  }
+
+  // Handle 403 Forbidden - access denied (e.g., admin-only routes)
+  if (response.status === 403) {
+    const json = await response.json().catch(() => ({ error: 'Access denied' }))
+    throw new ForbiddenError((json as ApiResponse<T>).error || 'Access denied')
   }
 
   const json: ApiResponse<T> = await response.json()

@@ -10,6 +10,8 @@ export {
   fetchApi,
   getApiBaseUrl,
   InsufficientTokensError,
+  AuthenticationError,
+  ForbiddenError,
 } from './client'
 
 // Auth

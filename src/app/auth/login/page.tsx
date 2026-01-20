@@ -25,16 +25,22 @@ function LoginPageContent() {
     }
   }, [searchParams])
 
+  // Get return URL from query params
+  const returnUrl = searchParams.get('returnUrl')
+
   // Redirect if already authenticated
   useEffect(() => {
     if (isAuthenticated && user) {
-      if (user.role === 'admin') {
+      // If returnUrl provided and valid, redirect there
+      if (returnUrl && returnUrl.startsWith('/') && !returnUrl.startsWith('//')) {
+        router.push(returnUrl)
+      } else if (user.role === 'admin') {
         router.push('/admin')
       } else {
         router.push('/')
       }
     }
-  }, [isAuthenticated, user, router])
+  }, [isAuthenticated, user, router, returnUrl])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -43,8 +49,10 @@ function LoginPageContent() {
 
     try {
       const user = await login(email, password)
-      // Redirect admin to /admin, others to /
-      if (user.role === 'admin') {
+      // Redirect to returnUrl if provided and valid
+      if (returnUrl && returnUrl.startsWith('/') && !returnUrl.startsWith('//')) {
+        router.push(returnUrl)
+      } else if (user.role === 'admin') {
         router.push('/admin')
       } else {
         router.push('/')
@@ -67,8 +75,10 @@ function LoginPageContent() {
     setError('')
     try {
       const user = await loginWithGoogle(credential)
-      // Redirect admin to /admin, others to /
-      if (user.role === 'admin') {
+      // Redirect to returnUrl if provided and valid
+      if (returnUrl && returnUrl.startsWith('/') && !returnUrl.startsWith('//')) {
+        router.push(returnUrl)
+      } else if (user.role === 'admin') {
         router.push('/admin')
       } else {
         router.push('/')
