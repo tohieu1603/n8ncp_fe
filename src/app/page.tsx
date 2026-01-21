@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import {
   Plus,
   Menu,
@@ -23,6 +24,8 @@ import {
   Crown,
   Scale,
   Trash2,
+  Check,
+  MessageCircle,
 } from 'lucide-react'
 import Image from 'next/image'
 import { useAuth } from '@/contexts/auth-context'
@@ -36,8 +39,16 @@ import {
   getRemainingTokens,
   InsufficientTokensError,
 } from '@/lib/api'
+import {
+  getConversations,
+  createConversation,
+  getConversation as getConversationApi,
+  updateConversation,
+  deleteConversation as deleteConversationApi,
+  type Conversation,
+  type ConversationMessage,
+} from '@/lib/api/conversations'
 import DocumentConverter from '@/components/document-converter'
-import { RefreshCw } from 'lucide-react'
 
 type AspectRatio = '1:1' | '16:9' | '9:16' | '4:3' | '3:4'
 type Resolution = '1K' | '2K' | '4K'
@@ -109,14 +120,7 @@ interface Message {
   settings?: { aspectRatio: AspectRatio; resolution: Resolution; model?: string }
 }
 
-interface ChatSession {
-  id: string
-  title: string
-  messages: Message[]
-  mode: Mode
-  agentId: string
-  createdAt: Date
-}
+// ChatSession is now fetched from API as Conversation
 
 const SUGGESTIONS = [
   { title: 'Sunset landscape', desc: 'Golden hour mountain scene', mode: 'image' as Mode },
@@ -126,11 +130,13 @@ const SUGGESTIONS = [
 ]
 
 export default function Home() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const { user, isAuthenticated, isLoading: authLoading, logout, refreshUser } = useAuth()
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
-  const [sessions, setSessions] = useState<ChatSession[]>([])
-  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
+  const [conversations, setConversations] = useState<Conversation[]>([])
+  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [prompt, setPrompt] = useState('')
   const [uploadedImages, setUploadedImages] = useState<string[]>([])
@@ -145,6 +151,9 @@ export default function Home() {
   const [selectedAgent, setSelectedAgent] = useState<Agent>(AGENTS[0])
   const [selectedImageModel, setSelectedImageModel] = useState<ImageModel>(IMAGE_MODELS[0])
   const [selectedLegalAgent, setSelectedLegalAgent] = useState<Agent>(AGENTS.find(a => a.id === 'legal_base')!)
+  const [isLoadingConversations, setIsLoadingConversations] = useState(false)
+  const [editingConversationId, setEditingConversationId] = useState<string | null>(null)
+  const [editingTitle, setEditingTitle] = useState('')
 
   const chatEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -163,40 +172,125 @@ export default function Home() {
     }
   }, [prompt])
 
-
-  const createNewSession = () => {
-    const newSession: ChatSession = {
-      id: Date.now().toString(),
-      title: 'New chat',
-      messages: [],
-      mode,
-      agentId: selectedAgent.id,
-      createdAt: new Date(),
+  // Sync conversationId from URL on mount
+  useEffect(() => {
+    const convId = searchParams.get('c')
+    if (convId && convId !== currentConversationId) {
+      setCurrentConversationId(convId)
     }
-    setSessions([newSession, ...sessions])
-    setCurrentSessionId(newSession.id)
-    setMessages([])
+  }, [searchParams, currentConversationId])
+
+  // Update URL when conversation changes
+  const updateConversationId = useCallback((id: string | null) => {
+    setCurrentConversationId(id)
+    if (id) {
+      router.push(`/?c=${id}`, { scroll: false })
+    } else {
+      router.push('/', { scroll: false })
+    }
+  }, [router])
+
+  // Load conversations from API
+  const loadConversations = useCallback(async () => {
+    if (!isAuthenticated) return
+    setIsLoadingConversations(true)
+    try {
+      const data = await getConversations(1, 50)
+      setConversations(data.conversations)
+    } catch (error) {
+      console.error('Failed to load conversations:', error)
+    } finally {
+      setIsLoadingConversations(false)
+    }
+  }, [isAuthenticated])
+
+  useEffect(() => {
+    loadConversations()
+  }, [loadConversations])
+
+  // Load messages when conversation changes
+  useEffect(() => {
+    const loadMessages = async () => {
+      if (!currentConversationId || !isAuthenticated) {
+        setMessages([])
+        return
+      }
+      try {
+        const conv = await getConversationApi(currentConversationId)
+        const loadedMessages: Message[] = conv.messages.map((m: ConversationMessage) => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          usage: m.tokensUsed ? { tokens: m.tokensUsed, cost: 0 } : undefined,
+        }))
+        setMessages(loadedMessages)
+        // Set agent from conversation
+        const agent = AGENTS.find((a) => a.id === conv.agentId)
+        if (agent) setSelectedAgent(agent)
+      } catch (error) {
+        console.error('Failed to load conversation:', error)
+        setMessages([])
+      }
+    }
+    loadMessages()
+  }, [currentConversationId, isAuthenticated])
+
+  const createNewSession = async () => {
+    if (!isAuthenticated) return
+    try {
+      const newConv = await createConversation()
+      setConversations([newConv, ...conversations])
+      updateConversationId(newConv.id)
+      setMessages([])
+    } catch (error) {
+      console.error('Failed to create conversation:', error)
+    }
   }
 
-  const selectSession = (sessionId: string) => {
-    const session = sessions.find((s) => s.id === sessionId)
-    if (session) {
-      setCurrentSessionId(sessionId)
-      // Don't reload old messages - start fresh from this session
-      setMessages([])
-      setMode(session.mode)
-      const agent = AGENTS.find((a) => a.id === session.agentId)
-      if (agent) setSelectedAgent(agent)
+  const selectSession = (convId: string) => {
+    updateConversationId(convId)
+  }
+
+  const deleteSession = async (convId: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    try {
+      await deleteConversationApi(convId)
+      setConversations(conversations.filter((c) => c.id !== convId))
+      if (currentConversationId === convId) {
+        updateConversationId(null)
+        setMessages([])
+      }
+    } catch (error) {
+      console.error('Failed to delete conversation:', error)
     }
   }
 
-  const deleteSession = (sessionId: string, e: React.MouseEvent) => {
-    e.stopPropagation() // Prevent selecting the session
-    setSessions(sessions.filter((s) => s.id !== sessionId))
-    if (currentSessionId === sessionId) {
-      setCurrentSessionId(null)
-      setMessages([])
+  const startEditingConversation = (convId: string, currentTitle: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setEditingConversationId(convId)
+    setEditingTitle(currentTitle)
+  }
+
+  const saveConversationTitle = async (convId: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (editingTitle.trim()) {
+      try {
+        await updateConversation(convId, { title: editingTitle.trim() })
+        setConversations(conversations.map(c =>
+          c.id === convId ? { ...c, title: editingTitle.trim() } : c
+        ))
+      } catch (error) {
+        console.error('Failed to update conversation:', error)
+      }
     }
+    setEditingConversationId(null)
+    setEditingTitle('')
+  }
+
+  const cancelEditingConversation = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setEditingConversationId(null)
+    setEditingTitle('')
   }
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -264,7 +358,6 @@ export default function Home() {
 
     const newMessages = [...messages, userMessage, loadingMessage]
     setMessages(newMessages)
-    updateSession(newMessages)
     setPrompt('')
     setUploadedImages([])
 
@@ -333,6 +426,19 @@ export default function Home() {
   }
 
   const handleChatMessage = async () => {
+    // Auto-create conversation if none selected
+    let convId = currentConversationId
+    if (!convId) {
+      try {
+        const newConv = await createConversation(prompt.slice(0, 30), selectedAgent.id)
+        setConversations([newConv, ...conversations])
+        convId = newConv.id
+        updateConversationId(convId)
+      } catch (error) {
+        console.error('Failed to create conversation:', error)
+      }
+    }
+
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
@@ -348,7 +454,6 @@ export default function Home() {
 
     const newMessages = [...messages, userMessage, loadingMessage]
     setMessages(newMessages)
-    updateSession(newMessages)
     setPrompt('')
 
     try {
@@ -357,7 +462,7 @@ export default function Home() {
       chatHistory.push({ role: 'user', content: prompt })
 
       const agentToUse = mode === 'legal' ? selectedLegalAgent : selectedAgent
-      for await (const chunk of streamChat(chatHistory, agentToUse.id)) {
+      for await (const chunk of streamChat(chatHistory, agentToUse.id, undefined, convId || undefined)) {
         if (chunk.content) {
           fullContent += chunk.content
           updateAssistantMessage(loadingMessage.id, {
@@ -397,39 +502,8 @@ export default function Home() {
     }
   }
 
-  const updateSession = (msgs: Message[]) => {
-    if (!currentSessionId) {
-      const newSession: ChatSession = {
-        id: Date.now().toString(),
-        title: prompt.slice(0, 30) + (prompt.length > 30 ? '...' : ''),
-        messages: msgs,
-        mode,
-        agentId: selectedAgent.id,
-        createdAt: new Date(),
-      }
-      setSessions([newSession, ...sessions])
-      setCurrentSessionId(newSession.id)
-    } else {
-      setSessions(
-        sessions.map((s) =>
-          s.id === currentSessionId
-            ? { ...s, messages: msgs, title: s.title === 'New chat' ? prompt.slice(0, 30) : s.title }
-            : s
-        )
-      )
-    }
-  }
-
   const updateAssistantMessage = (messageId: string, updates: Partial<Message>) => {
-    setMessages((prev) => {
-      const updated = prev.map((m) => (m.id === messageId ? { ...m, ...updates } : m))
-      if (currentSessionId) {
-        setSessions((sessions) =>
-          sessions.map((s) => (s.id === currentSessionId ? { ...s, messages: updated } : s))
-        )
-      }
-      return updated
-    })
+    setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, ...updates } : m)))
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -472,30 +546,90 @@ export default function Home() {
         </div>
 
         <div className="sidebar-content">
-          {sessions.length === 0 ? (
+          {isLoadingConversations ? (
+            <div style={{ textAlign: 'center', padding: '32px 16px' }}>
+              <Loader2 size={20} style={{ animation: 'spin 1s linear infinite' }} />
+            </div>
+          ) : conversations.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '32px 0' }}>
               <p style={{ fontSize: 14, color: 'var(--text-tertiary)' }}>No history yet</p>
             </div>
           ) : (
-            sessions.map((session) => (
+            conversations.map((conv) => (
               <div
-                key={session.id}
-                className={`history-item ${currentSessionId === session.id ? 'active' : ''}`}
-                onClick={() => selectSession(session.id)}
+                key={conv.id}
+                className={`history-item ${currentConversationId === conv.id ? 'active' : ''}`}
+                onClick={() => selectSession(conv.id)}
               >
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className="history-item-title">
-                    {session.mode === 'image' ? '🖼️' : '💬'} {session.title}
-                  </div>
-                  <div className="history-item-date">{session.createdAt.toLocaleDateString()}</div>
+                  {editingConversationId === conv.id ? (
+                    <input
+                      type="text"
+                      value={editingTitle}
+                      onChange={(e) => setEditingTitle(e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') saveConversationTitle(conv.id, e as unknown as React.MouseEvent)
+                        if (e.key === 'Escape') cancelEditingConversation(e as unknown as React.MouseEvent)
+                      }}
+                      autoFocus
+                      style={{
+                        width: '100%',
+                        padding: '4px 8px',
+                        fontSize: 13,
+                        border: '1px solid var(--accent)',
+                        borderRadius: 4,
+                        background: 'var(--bg-tertiary)',
+                        color: 'var(--text-primary)',
+                        outline: 'none',
+                      }}
+                    />
+                  ) : (
+                    <>
+                      <div className="history-item-title">
+                        <MessageCircle size={14} style={{ flexShrink: 0 }} /> {conv.title}
+                      </div>
+                      <div className="history-item-date">{new Date(conv.createdAt).toLocaleDateString('vi-VN')}</div>
+                    </>
+                  )}
                 </div>
-                <button
-                  className="history-delete-btn"
-                  onClick={(e) => deleteSession(session.id, e)}
-                  title="Xoá chat"
-                >
-                  <Trash2 size={14} />
-                </button>
+                {editingConversationId === conv.id ? (
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <button
+                      className="history-delete-btn"
+                      onClick={(e) => saveConversationTitle(conv.id, e)}
+                      title="Lưu"
+                      style={{ color: '#22c55e' }}
+                    >
+                      <Check size={14} />
+                    </button>
+                    <button
+                      className="history-delete-btn"
+                      onClick={cancelEditingConversation}
+                      title="Hủy"
+                      style={{ color: '#ef4444' }}
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <button
+                      className="history-delete-btn"
+                      onClick={(e) => startEditingConversation(conv.id, conv.title, e)}
+                      title="Đổi tên"
+                    >
+                      <Pencil size={14} />
+                    </button>
+                    <button
+                      className="history-delete-btn"
+                      onClick={(e) => deleteSession(conv.id, e)}
+                      title="Xoá"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                )}
               </div>
             ))
           )}
@@ -914,16 +1048,35 @@ export default function Home() {
           </div>
 
           {!isAuthenticated && !authLoading && (
-            <div style={{ display: 'flex', gap: 8 }}>
-              <a href="/auth/login" className="option-btn" style={{ textDecoration: 'none' }}>
-                Sign in
+            <div style={{ display: 'flex', gap: 8, flexShrink: 0, alignItems: 'center' }}>
+              <a
+                href="/auth/login"
+                style={{
+                  textDecoration: 'none',
+                  padding: '8px 16px',
+                  fontSize: 13,
+                  whiteSpace: 'nowrap',
+                  color: 'var(--text-secondary)',
+                  borderRadius: 8,
+                  transition: 'color 0.15s'
+                }}
+              >
+                Đăng nhập
               </a>
               <a
                 href="/auth/register"
-                className="modal-btn"
-                style={{ width: 'auto', padding: '8px 16px', marginTop: 0, textDecoration: 'none' }}
+                style={{
+                  textDecoration: 'none',
+                  padding: '8px 20px',
+                  fontSize: 13,
+                  whiteSpace: 'nowrap',
+                  background: 'var(--accent)',
+                  color: 'white',
+                  borderRadius: 8,
+                  fontWeight: 500
+                }}
               >
-                Sign up
+                Đăng ký
               </a>
             </div>
           )}

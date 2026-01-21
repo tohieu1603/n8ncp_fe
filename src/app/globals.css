@@ -71,9 +71,13 @@ body {
 }
 
 .sidebar-header {
+  height: 76px !important;
+  min-height: 76px !important;
   padding: 16px !important;
   border-bottom: 1px solid var(--border-color) !important;
   flex-shrink: 0 !important;
+  display: flex !important;
+  align-items: center !important;
 }
 
 .sidebar-content {
@@ -181,8 +185,8 @@ body {
 
 /* Header */
 .main-header {
-  height: 56px !important;
-  min-height: 56px !important;
+  height: 76px !important;
+  min-height: 76px !important;
   padding: 0 16px !important;
   display: flex !important;
   align-items: center !important;

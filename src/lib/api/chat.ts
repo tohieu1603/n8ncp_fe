@@ -138,20 +138,22 @@ export async function getAgents(): Promise<Agent[]> {
 export async function sendChat(
   messages: { role: string; content: string }[],
   agentId?: string,
-  imageUrl?: string
+  imageUrl?: string,
+  conversationId?: string
 ): Promise<ChatResponse> {
   const systemPrompt = agentId ? AGENT_SYSTEM_PROMPTS[agentId] : undefined
 
   return fetchApi<ChatResponse>('/api/chat', {
     method: 'POST',
-    body: JSON.stringify({ messages, agentId, imageUrl, systemPrompt }),
+    body: JSON.stringify({ messages, agentId, imageUrl, systemPrompt, conversationId }),
   })
 }
 
 export async function* streamChat(
   messages: { role: string; content: string }[],
   agentId?: string,
-  imageUrl?: string
+  imageUrl?: string,
+  conversationId?: string
 ): AsyncGenerator<{ content?: string; done?: boolean; usage?: { estimatedTokens: number; cost: number }; error?: string }> {
   const token = getAuthToken()
   const systemPrompt = agentId ? AGENT_SYSTEM_PROMPTS[agentId] : undefined
@@ -162,7 +164,7 @@ export async function* streamChat(
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify({ messages, agentId, imageUrl, systemPrompt }),
+    body: JSON.stringify({ messages, agentId, imageUrl, systemPrompt, conversationId }),
   })
 
   if (!response.ok) {
