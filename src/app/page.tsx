@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import {
   Plus,
   Menu,
@@ -14,11 +15,16 @@ import {
   Loader2,
   DollarSign,
   Trash2,
+<<<<<<< HEAD
   Play,
   ExternalLink,
   Copy,
   Check,
   Settings,
+=======
+  Check,
+  MessageCircle,
+>>>>>>> d49635003a6332ce2a257df3fc3104b94d355317
 } from 'lucide-react'
 import Image from 'next/image'
 import { useAuth } from '@/contexts/auth-context'
@@ -30,6 +36,19 @@ import {
   InsufficientTokensError,
   getDownloadUrl,
 } from '@/lib/api'
+<<<<<<< HEAD
+=======
+import {
+  getConversations,
+  createConversation,
+  getConversation as getConversationApi,
+  updateConversation,
+  deleteConversation as deleteConversationApi,
+  type Conversation,
+  type ConversationMessage,
+} from '@/lib/api/conversations'
+import DocumentConverter from '@/components/document-converter'
+>>>>>>> d49635003a6332ce2a257df3fc3104b94d355317
 
 type Mode = 'chat'
 
@@ -63,6 +82,7 @@ interface Message {
   workflowUrl?: string
 }
 
+<<<<<<< HEAD
 interface ChatSession {
   id: string
   title: string
@@ -71,6 +91,9 @@ interface ChatSession {
   conversationId?: string
   createdAt: Date
 }
+=======
+// ChatSession is now fetched from API as Conversation
+>>>>>>> d49635003a6332ce2a257df3fc3104b94d355317
 
 const SUGGESTIONS = [
   { title: 'n8n là gì?', desc: 'Giới thiệu về n8n workflow automation' },
@@ -80,18 +103,33 @@ const SUGGESTIONS = [
 ]
 
 export default function Home() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const { user, isAuthenticated, isLoading: authLoading, logout, refreshUser } = useAuth()
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
-  const [sessions, setSessions] = useState<ChatSession[]>([])
-  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
+  const [conversations, setConversations] = useState<Conversation[]>([])
+  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [prompt, setPrompt] = useState('')
   const [uploadedImages, setUploadedImages] = useState<string[]>([])
   const [showUserMenu, setShowUserMenu] = useState(false)
+<<<<<<< HEAD
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [copiedWorkflow, setCopiedWorkflow] = useState<string | null>(null)
   const [creatingWorkflow, setCreatingWorkflow] = useState<string | null>(null)
+=======
+  const [showAgentMenu, setShowAgentMenu] = useState(false)
+  const [showModelMenu, setShowModelMenu] = useState(false)
+  const [showLegalMenu, setShowLegalMenu] = useState(false)
+  const [mode, setMode] = useState<Mode>('chat')
+  const [selectedAgent, setSelectedAgent] = useState<Agent>(AGENTS[0])
+  const [selectedImageModel, setSelectedImageModel] = useState<ImageModel>(IMAGE_MODELS[0])
+  const [selectedLegalAgent, setSelectedLegalAgent] = useState<Agent>(AGENTS.find(a => a.id === 'legal_base')!)
+  const [isLoadingConversations, setIsLoadingConversations] = useState(false)
+  const [editingConversationId, setEditingConversationId] = useState<string | null>(null)
+  const [editingTitle, setEditingTitle] = useState('')
+>>>>>>> d49635003a6332ce2a257df3fc3104b94d355317
 
   const chatEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -110,6 +148,7 @@ export default function Home() {
     }
   }, [prompt])
 
+<<<<<<< HEAD
 
   const createNewSession = () => {
     const newSession: ChatSession = {
@@ -131,16 +170,127 @@ export default function Home() {
       setCurrentSessionId(sessionId)
       setMessages([])
       setConversationId(session.conversationId || null)
+=======
+  // Sync conversationId from URL on mount
+  useEffect(() => {
+    const convId = searchParams.get('c')
+    if (convId && convId !== currentConversationId) {
+      setCurrentConversationId(convId)
+    }
+  }, [searchParams, currentConversationId])
+
+  // Update URL when conversation changes
+  const updateConversationId = useCallback((id: string | null) => {
+    setCurrentConversationId(id)
+    if (id) {
+      router.push(`/?c=${id}`, { scroll: false })
+    } else {
+      router.push('/', { scroll: false })
+    }
+  }, [router])
+
+  // Load conversations from API
+  const loadConversations = useCallback(async () => {
+    if (!isAuthenticated) return
+    setIsLoadingConversations(true)
+    try {
+      const data = await getConversations(1, 50)
+      setConversations(data.conversations)
+    } catch (error) {
+      console.error('Failed to load conversations:', error)
+    } finally {
+      setIsLoadingConversations(false)
+    }
+  }, [isAuthenticated])
+
+  useEffect(() => {
+    loadConversations()
+  }, [loadConversations])
+
+  // Load messages when conversation changes
+  useEffect(() => {
+    const loadMessages = async () => {
+      if (!currentConversationId || !isAuthenticated) {
+        setMessages([])
+        return
+      }
+      try {
+        const conv = await getConversationApi(currentConversationId)
+        const loadedMessages: Message[] = conv.messages.map((m: ConversationMessage) => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          usage: m.tokensUsed ? { tokens: m.tokensUsed, cost: 0 } : undefined,
+        }))
+        setMessages(loadedMessages)
+        // Set agent from conversation
+        const agent = AGENTS.find((a) => a.id === conv.agentId)
+        if (agent) setSelectedAgent(agent)
+      } catch (error) {
+        console.error('Failed to load conversation:', error)
+        setMessages([])
+      }
+    }
+    loadMessages()
+  }, [currentConversationId, isAuthenticated])
+
+  const createNewSession = async () => {
+    if (!isAuthenticated) return
+    try {
+      const newConv = await createConversation()
+      setConversations([newConv, ...conversations])
+      updateConversationId(newConv.id)
+      setMessages([])
+    } catch (error) {
+      console.error('Failed to create conversation:', error)
+>>>>>>> d49635003a6332ce2a257df3fc3104b94d355317
     }
   }
 
-  const deleteSession = (sessionId: string, e: React.MouseEvent) => {
-    e.stopPropagation() // Prevent selecting the session
-    setSessions(sessions.filter((s) => s.id !== sessionId))
-    if (currentSessionId === sessionId) {
-      setCurrentSessionId(null)
-      setMessages([])
+  const selectSession = (convId: string) => {
+    updateConversationId(convId)
+  }
+
+  const deleteSession = async (convId: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    try {
+      await deleteConversationApi(convId)
+      setConversations(conversations.filter((c) => c.id !== convId))
+      if (currentConversationId === convId) {
+        updateConversationId(null)
+        setMessages([])
+      }
+    } catch (error) {
+      console.error('Failed to delete conversation:', error)
     }
+  }
+
+  const startEditingConversation = (convId: string, currentTitle: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setEditingConversationId(convId)
+    setEditingTitle(currentTitle)
+  }
+
+  const saveConversationTitle = async (convId: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (editingTitle.trim()) {
+      try {
+        await updateConversation(convId, { title: editingTitle.trim() })
+        setConversations(conversations.map(c =>
+          c.id === convId ? { ...c, title: editingTitle.trim() } : c
+        ))
+      } catch (error) {
+        console.error('Failed to update conversation:', error)
+      }
+    }
+    setEditingConversationId(null)
+    setEditingTitle('')
+  }
+
+  const cancelEditingConversation = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setEditingConversationId(null)
+    setEditingTitle('')
   }
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -206,13 +356,111 @@ export default function Home() {
     }
   }
 
+<<<<<<< HEAD
   const handleCopyWorkflow = (workflow: object, messageId: string) => {
     navigator.clipboard.writeText(JSON.stringify(workflow, null, 2))
     setCopiedWorkflow(messageId)
     setTimeout(() => setCopiedWorkflow(null), 2000)
+=======
+  const handleImageGeneration = async () => {
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      role: 'user',
+      content: prompt,
+      settings: { aspectRatio, resolution, model: selectedImageModel.name },
+    }
+
+    const loadingMessage: Message = {
+      id: (Date.now() + 1).toString(),
+      role: 'assistant',
+      content: 'Generating your image...',
+      isLoading: true,
+    }
+
+    const newMessages = [...messages, userMessage, loadingMessage]
+    setMessages(newMessages)
+    setPrompt('')
+    setUploadedImages([])
+
+    try {
+      const response = await generateImage({
+        prompt,
+        image_input: uploadedImages,
+        aspect_ratio: aspectRatio,
+        resolution,
+        output_format: 'png',
+        model: selectedImageModel.id,
+      })
+
+      const pollResult = async (taskId: string, attempts = 0): Promise<void> => {
+        if (attempts >= 60) {
+          updateAssistantMessage(loadingMessage.id, {
+            isLoading: false,
+            error: 'Generation timed out',
+            content: 'Sorry, the image generation timed out. Please try again.',
+          })
+          return
+        }
+
+        const status = await getTaskStatus(taskId, { prompt, aspect_ratio: aspectRatio, resolution })
+
+        if (status.status === 'completed' && status.output?.media_url) {
+          updateAssistantMessage(loadingMessage.id, {
+            isLoading: false,
+            imageUrl: status.output.media_url,
+            content: 'Here\'s your generated image!',
+          })
+          refreshUser()
+        } else if (status.status === 'failed') {
+          updateAssistantMessage(loadingMessage.id, {
+            isLoading: false,
+            error: status.error || 'Generation failed',
+            content: 'Sorry, something went wrong. Please try again.',
+          })
+        } else {
+          setTimeout(() => pollResult(taskId, attempts + 1), 2000)
+        }
+      }
+
+      pollResult(response.taskId)
+    } catch (error) {
+      // Handle insufficient tokens error
+      const errorMsg = error instanceof Error ? error.message : 'Failed to generate'
+      if (errorMsg.includes('token') || errorMsg.includes('insufficient')) {
+        updateAssistantMessage(loadingMessage.id, {
+          isLoading: false,
+          error: 'Hết token',
+          content: 'Bạn đã hết token! Vui lòng nạp thêm để tiếp tục sử dụng.',
+        })
+        setTimeout(() => {
+          window.location.href = '/account/billing'
+        }, 2000)
+        return
+      }
+
+      updateAssistantMessage(loadingMessage.id, {
+        isLoading: false,
+        error: errorMsg,
+        content: 'Xin lỗi, đã có lỗi xảy ra. Vui lòng thử lại.',
+      })
+    }
+>>>>>>> d49635003a6332ce2a257df3fc3104b94d355317
   }
 
   const handleChatMessage = async () => {
+    // Auto-create conversation if none selected
+    let convId = currentConversationId
+    if (!convId) {
+      try {
+        const newConv = await createConversation(prompt.slice(0, 30), selectedAgent.id)
+        setConversations([newConv, ...conversations])
+        convId = newConv.id
+        updateConversationId(convId)
+      } catch (error) {
+        console.error('Failed to create conversation:', error)
+      }
+    }
+
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
@@ -228,7 +476,6 @@ export default function Home() {
 
     const newMessages = [...messages, userMessage, loadingMessage]
     setMessages(newMessages)
-    updateSession(newMessages)
     setPrompt('')
 
     try {
@@ -236,10 +483,15 @@ export default function Home() {
       const chatHistory = messages.map((m) => ({ role: m.role, content: m.content }))
       chatHistory.push({ role: 'user', content: prompt })
 
+<<<<<<< HEAD
       // Use image URL if uploaded
       const imageUrl = uploadedImages.length > 0 ? uploadedImages[0] : undefined
 
       for await (const chunk of streamChat(chatHistory, imageUrl, conversationId || undefined)) {
+=======
+      const agentToUse = mode === 'legal' ? selectedLegalAgent : selectedAgent
+      for await (const chunk of streamChat(chatHistory, agentToUse.id, undefined, convId || undefined)) {
+>>>>>>> d49635003a6332ce2a257df3fc3104b94d355317
         if (chunk.content) {
           fullContent += chunk.content
           // Parse workflow while streaming
@@ -296,6 +548,7 @@ export default function Home() {
     }
   }
 
+<<<<<<< HEAD
   const updateSession = (msgs: Message[]) => {
     if (!currentSessionId) {
       const newSession: ChatSession = {
@@ -319,16 +572,10 @@ export default function Home() {
     }
   }
 
+=======
+>>>>>>> d49635003a6332ce2a257df3fc3104b94d355317
   const updateAssistantMessage = (messageId: string, updates: Partial<Message>) => {
-    setMessages((prev) => {
-      const updated = prev.map((m) => (m.id === messageId ? { ...m, ...updates } : m))
-      if (currentSessionId) {
-        setSessions((sessions) =>
-          sessions.map((s) => (s.id === currentSessionId ? { ...s, messages: updated } : s))
-        )
-      }
-      return updated
-    })
+    setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, ...updates } : m)))
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -365,30 +612,90 @@ export default function Home() {
         </div>
 
         <div className="sidebar-content">
-          {sessions.length === 0 ? (
+          {isLoadingConversations ? (
+            <div style={{ textAlign: 'center', padding: '32px 16px' }}>
+              <Loader2 size={20} style={{ animation: 'spin 1s linear infinite' }} />
+            </div>
+          ) : conversations.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '32px 0' }}>
               <p style={{ fontSize: 14, color: 'var(--text-tertiary)' }}>No history yet</p>
             </div>
           ) : (
-            sessions.map((session) => (
+            conversations.map((conv) => (
               <div
-                key={session.id}
-                className={`history-item ${currentSessionId === session.id ? 'active' : ''}`}
-                onClick={() => selectSession(session.id)}
+                key={conv.id}
+                className={`history-item ${currentConversationId === conv.id ? 'active' : ''}`}
+                onClick={() => selectSession(conv.id)}
               >
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className="history-item-title">
-                    {session.mode === 'image' ? '🖼️' : '💬'} {session.title}
-                  </div>
-                  <div className="history-item-date">{session.createdAt.toLocaleDateString()}</div>
+                  {editingConversationId === conv.id ? (
+                    <input
+                      type="text"
+                      value={editingTitle}
+                      onChange={(e) => setEditingTitle(e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') saveConversationTitle(conv.id, e as unknown as React.MouseEvent)
+                        if (e.key === 'Escape') cancelEditingConversation(e as unknown as React.MouseEvent)
+                      }}
+                      autoFocus
+                      style={{
+                        width: '100%',
+                        padding: '4px 8px',
+                        fontSize: 13,
+                        border: '1px solid var(--accent)',
+                        borderRadius: 4,
+                        background: 'var(--bg-tertiary)',
+                        color: 'var(--text-primary)',
+                        outline: 'none',
+                      }}
+                    />
+                  ) : (
+                    <>
+                      <div className="history-item-title">
+                        <MessageCircle size={14} style={{ flexShrink: 0 }} /> {conv.title}
+                      </div>
+                      <div className="history-item-date">{new Date(conv.createdAt).toLocaleDateString('vi-VN')}</div>
+                    </>
+                  )}
                 </div>
-                <button
-                  className="history-delete-btn"
-                  onClick={(e) => deleteSession(session.id, e)}
-                  title="Xoá chat"
-                >
-                  <Trash2 size={14} />
-                </button>
+                {editingConversationId === conv.id ? (
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <button
+                      className="history-delete-btn"
+                      onClick={(e) => saveConversationTitle(conv.id, e)}
+                      title="Lưu"
+                      style={{ color: '#22c55e' }}
+                    >
+                      <Check size={14} />
+                    </button>
+                    <button
+                      className="history-delete-btn"
+                      onClick={cancelEditingConversation}
+                      title="Hủy"
+                      style={{ color: '#ef4444' }}
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <button
+                      className="history-delete-btn"
+                      onClick={(e) => startEditingConversation(conv.id, conv.title, e)}
+                      title="Đổi tên"
+                    >
+                      <Pencil size={14} />
+                    </button>
+                    <button
+                      className="history-delete-btn"
+                      onClick={(e) => deleteSession(conv.id, e)}
+                      title="Xoá"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                )}
               </div>
             ))
           )}
@@ -500,14 +807,38 @@ export default function Home() {
           </div>
 
           {!isAuthenticated && !authLoading && (
+<<<<<<< HEAD
             <div style={{ display: 'flex', gap: 8 }}>
               <a href="/auth/login" className="option-btn" style={{ textDecoration: 'none' }}>
+=======
+            <div style={{ display: 'flex', gap: 8, flexShrink: 0, alignItems: 'center' }}>
+              <a
+                href="/auth/login"
+                style={{
+                  textDecoration: 'none',
+                  padding: '8px 16px',
+                  fontSize: 13,
+                  whiteSpace: 'nowrap',
+                  color: 'var(--text-secondary)',
+                  borderRadius: 8,
+                  transition: 'color 0.15s'
+                }}
+              >
+>>>>>>> d49635003a6332ce2a257df3fc3104b94d355317
                 Đăng nhập
               </a>
               <a
                 href="/auth/register"
-                className="modal-btn"
-                style={{ width: 'auto', padding: '8px 16px', marginTop: 0, textDecoration: 'none' }}
+                style={{
+                  textDecoration: 'none',
+                  padding: '8px 20px',
+                  fontSize: 13,
+                  whiteSpace: 'nowrap',
+                  background: 'var(--accent)',
+                  color: 'white',
+                  borderRadius: 8,
+                  fontWeight: 500
+                }}
               >
                 Đăng ký
               </a>

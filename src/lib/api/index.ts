@@ -47,7 +47,7 @@ export { getUsageSummary, getUsageLogs, getUsageStats } from './usage'
 export type { UsageLog, UsageSummary, UsageLogsResponse, UsageStats } from './usage'
 
 // Keys
-export { getApiKeys, createApiKey, deleteApiKey } from './keys'
+export { getApiKeys, createApiKey, deleteApiKey, revealApiKey } from './keys'
 export type { ApiKey } from './keys'
 
 // Convert

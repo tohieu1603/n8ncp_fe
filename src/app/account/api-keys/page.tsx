@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Key, Copy, Plus, Trash2, Check, AlertTriangle, Shield } from 'lucide-react'
-import { getApiKeys, createApiKey, deleteApiKey, ApiKey } from '@/lib/api'
+import { Key, Copy, Plus, Trash2, Check, AlertTriangle, Shield, Eye, EyeOff } from 'lucide-react'
+import { getApiKeys, createApiKey, deleteApiKey, revealApiKey, ApiKey } from '@/lib/api'
 
 export default function ApiKeysPage() {
   const [keys, setKeys] = useState<ApiKey[]>([])
@@ -12,6 +12,8 @@ export default function ApiKeysPage() {
   const [newKey, setNewKey] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
+  const [revealedKeys, setRevealedKeys] = useState<Map<string, string>>(new Map()) // id -> full key
+  const [revealingId, setRevealingId] = useState<string | null>(null)
 
   useEffect(() => { loadKeys() }, [])
 
@@ -35,8 +37,48 @@ export default function ApiKeysPage() {
     catch (error) { console.error('Failed to delete API key:', error) }
   }
 
-  const copyToClipboard = async (text: string, id: string) => {
-    await navigator.clipboard.writeText(text)
+  const toggleKeyVisibility = async (id: string) => {
+    // If already revealed, hide it
+    if (revealedKeys.has(id)) {
+      const newMap = new Map(revealedKeys)
+      newMap.delete(id)
+      setRevealedKeys(newMap)
+      return
+    }
+
+    // Fetch full key from API
+    setRevealingId(id)
+    try {
+      const fullKey = await revealApiKey(id)
+      setRevealedKeys(prev => new Map(prev).set(id, fullKey))
+    } catch (error) {
+      console.error('Failed to reveal API key:', error)
+    } finally {
+      setRevealingId(null)
+    }
+  }
+
+  const getDisplayKey = (key: ApiKey) => {
+    if (revealedKeys.has(key.id)) {
+      return revealedKeys.get(key.id)!
+    }
+    return key.key // Already masked from backend
+  }
+
+  const copyKey = async (id: string) => {
+    let keyToCopy = revealedKeys.get(id)
+
+    // If not revealed, fetch it first
+    if (!keyToCopy) {
+      try {
+        keyToCopy = await revealApiKey(id)
+      } catch (error) {
+        console.error('Failed to get API key for copy:', error)
+        return
+      }
+    }
+
+    await navigator.clipboard.writeText(keyToCopy)
     setCopiedId(id)
     setTimeout(() => setCopiedId(null), 2000)
   }
@@ -85,9 +127,14 @@ export default function ApiKeysPage() {
                 </div>
                 <div className="flex items-center gap-2 mb-3">
                   <code className="flex-1 px-3 py-2 bg-[#0a0a0f] rounded-lg font-mono text-sm text-[#a0a0a8] truncate">
-                    {key.key}
+                    {getDisplayKey(key)}
                   </code>
-                  <button onClick={() => copyToClipboard(key.key, key.id)} className="p-2 rounded-lg bg-[#1a1a22] text-[#a0a0a8] hover:bg-[rgba(139,92,246,0.15)] hover:text-[#8b5cf6] transition-colors" title="Copy to clipboard">
+                  {key.canReveal && (
+                    <button onClick={() => toggleKeyVisibility(key.id)} disabled={revealingId === key.id} className="p-2 rounded-lg bg-[#1a1a22] text-[#a0a0a8] hover:bg-[rgba(139,92,246,0.15)] hover:text-[#8b5cf6] transition-colors disabled:opacity-50" title={revealedKeys.has(key.id) ? "Hide key" : "Show key"}>
+                      {revealingId === key.id ? <div className="w-4 h-4 border-2 border-[#8b5cf6] border-t-transparent rounded-full animate-spin" /> : revealedKeys.has(key.id) ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  )}
+                  <button onClick={() => copyKey(key.id)} className="p-2 rounded-lg bg-[#1a1a22] text-[#a0a0a8] hover:bg-[rgba(139,92,246,0.15)] hover:text-[#8b5cf6] transition-colors" title="Copy to clipboard">
                     {copiedId === key.id ? <Check size={16} className="text-green-400" /> : <Copy size={16} />}
                   </button>
                 </div>
@@ -112,7 +159,7 @@ export default function ApiKeysPage() {
                 <div className="p-4 mb-4 bg-[rgba(251,191,36,0.1)] border border-[rgba(251,191,36,0.2)] rounded-xl"><p className="text-sm text-amber-400"><strong>Important:</strong> Copy your API key now. You won&apos;t be able to see it again!</p></div>
                 <div className="flex items-center gap-2 p-3 mb-6 bg-[#0a0a0f] rounded-xl">
                   <code className="flex-1 font-mono text-sm text-[#a0a0a8] break-all">{newKey}</code>
-                  <button onClick={() => copyToClipboard(newKey, 'new')} className="p-2 rounded-lg bg-[#1a1a22] text-[#a0a0a8] hover:bg-[rgba(139,92,246,0.15)] hover:text-[#8b5cf6] transition-colors">{copiedId === 'new' ? <Check size={16} className="text-green-400" /> : <Copy size={16} />}</button>
+                  <button onClick={async () => { await navigator.clipboard.writeText(newKey); setCopiedId('new'); setTimeout(() => setCopiedId(null), 2000) }} className="p-2 rounded-lg bg-[#1a1a22] text-[#a0a0a8] hover:bg-[rgba(139,92,246,0.15)] hover:text-[#8b5cf6] transition-colors">{copiedId === 'new' ? <Check size={16} className="text-green-400" /> : <Copy size={16} />}</button>
                 </div>
                 <button onClick={() => { setShowCreateModal(false); setNewKey(null) }} className="w-full py-3 bg-[#8b5cf6] hover:bg-[#a78bfa] text-white font-semibold rounded-xl transition-colors">Done</button>
               </>
