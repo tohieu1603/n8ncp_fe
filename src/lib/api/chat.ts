@@ -42,35 +42,20 @@ export async function getAgents(): Promise<Agent[]> {
 
 export async function sendChat(
   messages: { role: string; content: string }[],
-<<<<<<< HEAD
-=======
-  agentId?: string,
->>>>>>> d49635003a6332ce2a257df3fc3104b94d355317
   imageUrl?: string,
   conversationId?: string
 ): Promise<ChatResponse> {
   return fetchApi<ChatResponse>('/api/chat', {
     method: 'POST',
-<<<<<<< HEAD
     body: JSON.stringify({ messages, imageUrl, conversationId }),
-=======
-    body: JSON.stringify({ messages, agentId, imageUrl, systemPrompt, conversationId }),
->>>>>>> d49635003a6332ce2a257df3fc3104b94d355317
   })
 }
 
 export async function* streamChat(
   messages: { role: string; content: string }[],
-<<<<<<< HEAD
   imageUrl?: string,
   conversationId?: string
 ): AsyncGenerator<{ content?: string; done?: boolean; conversationId?: string; usage?: { estimatedTokens: number; cost: number }; error?: string }> {
-=======
-  agentId?: string,
-  imageUrl?: string,
-  conversationId?: string
-): AsyncGenerator<{ content?: string; done?: boolean; usage?: { estimatedTokens: number; cost: number }; error?: string }> {
->>>>>>> d49635003a6332ce2a257df3fc3104b94d355317
   const token = getAuthToken()
 
   const response = await fetch(`${getApiBaseUrl()}/api/chat/stream`, {
@@ -79,11 +64,7 @@ export async function* streamChat(
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-<<<<<<< HEAD
     body: JSON.stringify({ messages, imageUrl, conversationId }),
-=======
-    body: JSON.stringify({ messages, agentId, imageUrl, systemPrompt, conversationId }),
->>>>>>> d49635003a6332ce2a257df3fc3104b94d355317
   })
 
   if (!response.ok) {
