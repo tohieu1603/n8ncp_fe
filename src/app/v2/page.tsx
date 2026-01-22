@@ -300,7 +300,7 @@ export default function V2Page() {
       updateNode('4', 'running')
 
       let fullContent = ''
-      for await (const chunk of streamChat(apiMessages, 'general_base', undefined, convId)) {
+      for await (const chunk of streamChat(apiMessages, undefined, convId)) {
         if (chunk.content) {
           fullContent += chunk.content
           setMessages((prev) => prev.map(m =>
