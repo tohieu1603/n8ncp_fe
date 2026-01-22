@@ -1,7 +1,8 @@
 # Dependencies
 node_modules/
-.pnp
+/.pnp
 .pnp.js
+.yarn/install-state.gz
 
 # Next.js
 .next/

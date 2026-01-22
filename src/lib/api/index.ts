@@ -35,8 +35,8 @@ export { generateImage, getTaskStatus, getDownloadUrl } from './generate'
 export type { GenerateResponse, StatusResponse } from './generate'
 
 // Chat
-export { getAgents, sendChat, streamChat, AGENT_SYSTEM_PROMPTS } from './chat'
-export type { Agent, AgentTier, ChatUsage, ChatResponse } from './chat'
+export { getAgents, sendChat, streamChat, createWorkflow } from './chat'
+export type { Agent, AgentTier, ChatUsage, ChatResponse, WorkflowCreateResponse } from './chat'
 
 // Billing
 export { getPaymentHistory, createPayment, checkPaymentStatus } from './billing'

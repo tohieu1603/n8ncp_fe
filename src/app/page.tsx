@@ -6,96 +6,49 @@ import {
   Menu,
   Send,
   Download,
-  Settings,
   LogOut,
   BarChart2,
   Sparkles,
   X,
   Upload,
-  ChevronDown,
-  MessageSquare,
-  Image as ImageIcon,
-  FileText,
-  Code,
-  Pencil,
   Loader2,
   DollarSign,
-  Crown,
-  Scale,
   Trash2,
+  Play,
+  ExternalLink,
+  Copy,
+  Check,
+  Settings,
 } from 'lucide-react'
 import Image from 'next/image'
 import { useAuth } from '@/contexts/auth-context'
 import {
-  generateImage,
-  getTaskStatus,
-  getDownloadUrl,
   streamChat,
-  Agent,
+  createWorkflow,
   hasEnoughTokens,
   getRemainingTokens,
   InsufficientTokensError,
+  getDownloadUrl,
 } from '@/lib/api'
-import DocumentConverter from '@/components/document-converter'
-import { RefreshCw } from 'lucide-react'
 
-type AspectRatio = '1:1' | '16:9' | '9:16' | '4:3' | '3:4'
-type Resolution = '1K' | '2K' | '4K'
-type Mode = 'image' | 'chat' | 'convert' | 'legal'
+type Mode = 'chat'
 
-// Image model configurations
-interface ImageModel {
-  id: string
-  name: string
-  description: string
-  tier: 'base' | 'pro'
-  speed: 'fast' | 'medium' | 'slow'
-  quality: 'standard' | 'high' | 'ultra'
-}
+// Parse n8n-workflow code blocks from message content
+function parseWorkflowFromContent(content: string): { text: string; workflow: object | null } {
+  const workflowRegex = /```n8n-workflow\s*([\s\S]*?)```/g
+  const match = workflowRegex.exec(content)
 
-const IMAGE_MODELS: ImageModel[] = [
-  // Base models
-  { id: 'flux-schnell', name: 'Flux Schnell', description: 'Fast generation, good quality', tier: 'base', speed: 'fast', quality: 'standard' },
-  { id: 'flux-dev', name: 'Flux Dev', description: 'Balanced speed & quality', tier: 'base', speed: 'medium', quality: 'high' },
-  // Pro models - Full Gemini 3 experience
-  { id: 'flux-pro', name: 'Flux Pro', description: 'Premium quality, best details', tier: 'pro', speed: 'medium', quality: 'ultra' },
-  { id: 'gemini-imagen-3', name: 'Gemini Imagen 3', description: 'Google AI - photorealistic results', tier: 'pro', speed: 'slow', quality: 'ultra' },
-  { id: 'gemini-imagen-3-fast', name: 'Gemini Imagen 3 Fast', description: 'Google AI - faster generation', tier: 'pro', speed: 'fast', quality: 'high' },
-]
+  if (match) {
+    try {
+      const workflow = JSON.parse(match[1].trim())
+      const text = content.replace(workflowRegex, '').trim()
+      return { text, workflow }
+    } catch {
+      return { text: content, workflow: null }
+    }
+  }
 
-// Agent configurations with tiers
-// NOTE: Backend cần implement system prompt riêng cho mỗi agent để giới hạn lĩnh vực chuyên môn
-const AGENTS: Agent[] = [
-  // General - Trợ lý đa năng, trả lời mọi câu hỏi
-  { id: 'general_base', name: 'General', icon: 'MessageSquare', description: 'Trợ lý đa năng • Trả lời mọi câu hỏi • Giới hạn 4K token', tier: 'base', category: 'general' },
-  { id: 'general_pro', name: 'General Pro', icon: 'MessageSquare', description: 'Trợ lý đa năng • Context 32K • Suy luận & phân tích chuyên sâu', tier: 'pro', category: 'general' },
-  // Image - CHỈ hỗ trợ về hình ảnh, prompt, thiết kế
-  { id: 'image_base', name: 'Image', icon: 'Image', description: 'Chuyên gia hình ảnh • Phân tích ảnh • Gợi ý prompt AI', tier: 'base', category: 'image' },
-  { id: 'image_pro', name: 'Image Pro', icon: 'Image', description: 'Chuyên gia hình ảnh • Phân tích đa ảnh • Prompt Midjourney/DALL-E', tier: 'pro', category: 'image' },
-  // Document - CHỈ xử lý tài liệu, văn bản
-  { id: 'document_base', name: 'Document', icon: 'FileText', description: 'Chuyên gia tài liệu • Tóm tắt • Trích xuất thông tin', tier: 'base', category: 'document' },
-  { id: 'document_pro', name: 'Document Pro', icon: 'FileText', description: 'Chuyên gia tài liệu • Phân tích sâu • So sánh & báo cáo', tier: 'pro', category: 'document' },
-  // Code - CHỈ hỗ trợ lập trình
-  { id: 'code_base', name: 'Code', icon: 'Code', description: 'Chuyên gia code • Debug • Giải thích code', tier: 'base', category: 'code' },
-  { id: 'code_pro', name: 'Code Pro', icon: 'Code', description: 'Chuyên gia code • Kiến trúc full-stack • Review & tối ưu', tier: 'pro', category: 'code' },
-  // Creative - CHỈ sáng tạo nội dung
-  { id: 'creative_base', name: 'Creative', icon: 'Pencil', description: 'Chuyên gia sáng tạo • Viết content • Ý tưởng marketing', tier: 'base', category: 'creative' },
-  { id: 'creative_pro', name: 'Creative Pro', icon: 'Pencil', description: 'Chuyên gia sáng tạo • Copywriting • Kịch bản & SEO', tier: 'pro', category: 'creative' },
-  // Legal & Finance - CHỈ về pháp lý, tài chính
-  { id: 'legal_base', name: 'Văn bản', icon: 'Scale', description: 'Chuyên gia văn bản • Đọc & sửa • Tóm tắt pháp lý', tier: 'base', category: 'legal' },
-  { id: 'legal_pro', name: 'Văn bản Pro', icon: 'Scale', description: 'Chuyên gia văn bản • Tư vấn pháp lý & tài chính • Soạn hợp đồng', tier: 'pro', category: 'legal' },
-]
-
-// Group agents by category
-const AGENT_CATEGORIES = ['general', 'image', 'document', 'code', 'creative', 'legal']
-
-const AGENT_ICONS: Record<string, typeof MessageSquare> = {
-  MessageSquare,
-  Image: ImageIcon,
-  FileText,
-  Code,
-  Pencil,
-  Scale,
+  return { text: content, workflow: null }
 }
 
 interface Message {
@@ -106,7 +59,8 @@ interface Message {
   isLoading?: boolean
   error?: string
   usage?: { tokens: number; cost: number }
-  settings?: { aspectRatio: AspectRatio; resolution: Resolution; model?: string }
+  workflow?: object | null
+  workflowUrl?: string
 }
 
 interface ChatSession {
@@ -114,15 +68,15 @@ interface ChatSession {
   title: string
   messages: Message[]
   mode: Mode
-  agentId: string
+  conversationId?: string
   createdAt: Date
 }
 
 const SUGGESTIONS = [
-  { title: 'Sunset landscape', desc: 'Golden hour mountain scene', mode: 'image' as Mode },
-  { title: 'Analyze this code', desc: 'Help me understand a function', mode: 'chat' as Mode },
-  { title: 'Cyberpunk city', desc: 'Neon-lit futuristic streets', mode: 'image' as Mode },
-  { title: 'Summarize document', desc: 'Extract key points', mode: 'chat' as Mode },
+  { title: 'n8n là gì?', desc: 'Giới thiệu về n8n workflow automation' },
+  { title: 'Tạo workflow gửi email', desc: 'Workflow tự động gửi email khi có trigger' },
+  { title: 'Kết nối Google Sheets', desc: 'Đọc/ghi dữ liệu từ Google Sheets' },
+  { title: 'Webhook + Slack', desc: 'Nhận webhook và gửi thông báo Slack' },
 ]
 
 export default function Home() {
@@ -134,17 +88,10 @@ export default function Home() {
   const [messages, setMessages] = useState<Message[]>([])
   const [prompt, setPrompt] = useState('')
   const [uploadedImages, setUploadedImages] = useState<string[]>([])
-  const [aspectRatio, setAspectRatio] = useState<AspectRatio>('1:1')
-  const [resolution, setResolution] = useState<Resolution>('1K')
-  const [showSettings, setShowSettings] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
-  const [showAgentMenu, setShowAgentMenu] = useState(false)
-  const [showModelMenu, setShowModelMenu] = useState(false)
-  const [showLegalMenu, setShowLegalMenu] = useState(false)
-  const [mode, setMode] = useState<Mode>('chat')
-  const [selectedAgent, setSelectedAgent] = useState<Agent>(AGENTS[0])
-  const [selectedImageModel, setSelectedImageModel] = useState<ImageModel>(IMAGE_MODELS[0])
-  const [selectedLegalAgent, setSelectedLegalAgent] = useState<Agent>(AGENTS.find(a => a.id === 'legal_base')!)
+  const [conversationId, setConversationId] = useState<string | null>(null)
+  const [copiedWorkflow, setCopiedWorkflow] = useState<string | null>(null)
+  const [creatingWorkflow, setCreatingWorkflow] = useState<string | null>(null)
 
   const chatEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -167,26 +114,23 @@ export default function Home() {
   const createNewSession = () => {
     const newSession: ChatSession = {
       id: Date.now().toString(),
-      title: 'New chat',
+      title: 'Cuộc trò chuyện mới',
       messages: [],
-      mode,
-      agentId: selectedAgent.id,
+      mode: 'chat',
       createdAt: new Date(),
     }
     setSessions([newSession, ...sessions])
     setCurrentSessionId(newSession.id)
     setMessages([])
+    setConversationId(null)
   }
 
   const selectSession = (sessionId: string) => {
     const session = sessions.find((s) => s.id === sessionId)
     if (session) {
       setCurrentSessionId(sessionId)
-      // Don't reload old messages - start fresh from this session
       setMessages([])
-      setMode(session.mode)
-      const agent = AGENTS.find((a) => a.id === session.agentId)
-      if (agent) setSelectedAgent(agent)
+      setConversationId(session.conversationId || null)
     }
   }
 
@@ -229,10 +173,8 @@ export default function Home() {
   const handleSend = async () => {
     if (!prompt.trim() || !isAuthenticated) return
 
-    // Validate token trước khi gửi request
-    // Ước tính token cần: chat ~1000, image ~5000
-    const estimatedTokens = mode === 'image' ? 5000 : 1000
-
+    // Validate token
+    const estimatedTokens = 1000
     if (!hasEnoughTokens(user, estimatedTokens)) {
       const remaining = getRemainingTokens(user)
       alert(`Không đủ token! Còn lại: ${remaining.toLocaleString()} token.\nVui lòng nạp thêm để tiếp tục sử dụng.`)
@@ -240,96 +182,34 @@ export default function Home() {
       return
     }
 
-    if (mode === 'image') {
-      await handleImageGeneration()
-    } else if (mode === 'chat' || mode === 'legal') {
-      await handleChatMessage()
+    await handleChatMessage()
+  }
+
+  const handleCreateWorkflow = async (workflow: object, messageId: string) => {
+    setCreatingWorkflow(messageId)
+    try {
+      const result = await createWorkflow(workflow)
+      if (result && result.success && result.workflowUrl) {
+        // Update message with workflow URL
+        updateAssistantMessage(messageId, { workflowUrl: result.workflowUrl })
+        // Open workflow in new tab (iframe blocked by n8n X-Frame-Options)
+        window.open(result.workflowUrl, '_blank')
+      } else {
+        const errorMsg = result?.error || 'Không thể tạo workflow. Kiểm tra kết nối n8n.'
+        alert(errorMsg)
+      }
+    } catch (error) {
+      console.error('Create workflow error:', error)
+      alert(error instanceof Error ? error.message : 'Lỗi khi tạo workflow')
+    } finally {
+      setCreatingWorkflow(null)
     }
   }
 
-  const handleImageGeneration = async () => {
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: prompt,
-      settings: { aspectRatio, resolution, model: selectedImageModel.name },
-    }
-
-    const loadingMessage: Message = {
-      id: (Date.now() + 1).toString(),
-      role: 'assistant',
-      content: 'Generating your image...',
-      isLoading: true,
-    }
-
-    const newMessages = [...messages, userMessage, loadingMessage]
-    setMessages(newMessages)
-    updateSession(newMessages)
-    setPrompt('')
-    setUploadedImages([])
-
-    try {
-      const response = await generateImage({
-        prompt,
-        image_input: uploadedImages,
-        aspect_ratio: aspectRatio,
-        resolution,
-        output_format: 'png',
-        model: selectedImageModel.id,
-      })
-
-      const pollResult = async (taskId: string, attempts = 0): Promise<void> => {
-        if (attempts >= 60) {
-          updateAssistantMessage(loadingMessage.id, {
-            isLoading: false,
-            error: 'Generation timed out',
-            content: 'Sorry, the image generation timed out. Please try again.',
-          })
-          return
-        }
-
-        const status = await getTaskStatus(taskId, { prompt, aspect_ratio: aspectRatio, resolution })
-
-        if (status.status === 'completed' && status.output?.media_url) {
-          updateAssistantMessage(loadingMessage.id, {
-            isLoading: false,
-            imageUrl: status.output.media_url,
-            content: 'Here\'s your generated image!',
-          })
-          refreshUser()
-        } else if (status.status === 'failed') {
-          updateAssistantMessage(loadingMessage.id, {
-            isLoading: false,
-            error: status.error || 'Generation failed',
-            content: 'Sorry, something went wrong. Please try again.',
-          })
-        } else {
-          setTimeout(() => pollResult(taskId, attempts + 1), 2000)
-        }
-      }
-
-      pollResult(response.taskId)
-    } catch (error) {
-      // Handle insufficient tokens error
-      const errorMsg = error instanceof Error ? error.message : 'Failed to generate'
-      if (errorMsg.includes('token') || errorMsg.includes('insufficient')) {
-        updateAssistantMessage(loadingMessage.id, {
-          isLoading: false,
-          error: 'Hết token',
-          content: 'Bạn đã hết token! Vui lòng nạp thêm để tiếp tục sử dụng.',
-        })
-        setTimeout(() => {
-          window.location.href = '/account/billing'
-        }, 2000)
-        return
-      }
-
-      updateAssistantMessage(loadingMessage.id, {
-        isLoading: false,
-        error: errorMsg,
-        content: 'Xin lỗi, đã có lỗi xảy ra. Vui lòng thử lại.',
-      })
-    }
+  const handleCopyWorkflow = (workflow: object, messageId: string) => {
+    navigator.clipboard.writeText(JSON.stringify(workflow, null, 2))
+    setCopiedWorkflow(messageId)
+    setTimeout(() => setCopiedWorkflow(null), 2000)
   }
 
   const handleChatMessage = async () => {
@@ -356,33 +236,52 @@ export default function Home() {
       const chatHistory = messages.map((m) => ({ role: m.role, content: m.content }))
       chatHistory.push({ role: 'user', content: prompt })
 
-      const agentToUse = mode === 'legal' ? selectedLegalAgent : selectedAgent
-      for await (const chunk of streamChat(chatHistory, agentToUse.id)) {
+      // Use image URL if uploaded
+      const imageUrl = uploadedImages.length > 0 ? uploadedImages[0] : undefined
+
+      for await (const chunk of streamChat(chatHistory, imageUrl, conversationId || undefined)) {
         if (chunk.content) {
           fullContent += chunk.content
+          // Parse workflow while streaming
+          const { text, workflow } = parseWorkflowFromContent(fullContent)
           updateAssistantMessage(loadingMessage.id, {
-            content: fullContent,
+            content: text,
+            workflow,
             isLoading: true,
           })
         }
-        if (chunk.done && chunk.usage) {
+        if (chunk.done) {
+          // Update conversation ID for future messages
+          if (chunk.conversationId) {
+            setConversationId(chunk.conversationId)
+            // Update session with conversation ID
+            if (currentSessionId) {
+              setSessions(sessions.map(s =>
+                s.id === currentSessionId ? { ...s, conversationId: chunk.conversationId } : s
+              ))
+            }
+          }
+          // Final parse
+          const { text, workflow } = parseWorkflowFromContent(fullContent)
           updateAssistantMessage(loadingMessage.id, {
-            content: fullContent,
+            content: text,
+            workflow,
             isLoading: false,
-            usage: { tokens: chunk.usage.estimatedTokens, cost: chunk.usage.cost },
+            usage: chunk.usage ? { tokens: chunk.usage.estimatedTokens, cost: chunk.usage.cost } : undefined,
           })
           refreshUser()
         }
       }
+
+      // Clear uploaded images after sending
+      setUploadedImages([])
     } catch (error) {
-      // Handle insufficient tokens error
       if (error instanceof InsufficientTokensError) {
         updateAssistantMessage(loadingMessage.id, {
           isLoading: false,
           error: 'Hết token',
           content: 'Bạn đã hết token! Vui lòng nạp thêm để tiếp tục sử dụng.',
         })
-        // Redirect to billing after 2 seconds
         setTimeout(() => {
           window.location.href = '/account/billing'
         }, 2000)
@@ -403,8 +302,8 @@ export default function Home() {
         id: Date.now().toString(),
         title: prompt.slice(0, 30) + (prompt.length > 30 ? '...' : ''),
         messages: msgs,
-        mode,
-        agentId: selectedAgent.id,
+        mode: 'chat',
+        conversationId: conversationId || undefined,
         createdAt: new Date(),
       }
       setSessions([newSession, ...sessions])
@@ -413,7 +312,7 @@ export default function Home() {
       setSessions(
         sessions.map((s) =>
           s.id === currentSessionId
-            ? { ...s, messages: msgs, title: s.title === 'New chat' ? prompt.slice(0, 30) : s.title }
+            ? { ...s, messages: msgs, title: s.title === 'Cuộc trò chuyện mới' ? prompt.slice(0, 30) : s.title }
             : s
         )
       )
@@ -450,15 +349,9 @@ export default function Home() {
   }
 
   const handleSuggestionClick = (suggestion: typeof SUGGESTIONS[0]) => {
-    setMode(suggestion.mode)
-    if (suggestion.mode === 'chat') {
-      setSelectedAgent(AGENTS.find((a) => a.id === 'general_base') || AGENTS[0])
-    }
-    setPrompt(`${suggestion.title}: ${suggestion.desc}`)
+    setPrompt(suggestion.title)
     textareaRef.current?.focus()
   }
-
-  const AgentIcon = AGENT_ICONS[selectedAgent.icon] || MessageSquare
 
   return (
     <div className="app-container">
@@ -593,337 +486,30 @@ export default function Home() {
                   width: 32,
                   height: 32,
                   borderRadius: 8,
-                  background: 'linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)',
+                  background: 'linear-gradient(135deg, #ff6b35 0%, #f7931e 100%)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}
               >
-                <Sparkles size={16} color="white" />
+                <Play size={16} color="white" />
               </div>
-              <span style={{ fontWeight: 600, fontSize: 16 }}>ImageGen AI</span>
+              <span style={{ fontWeight: 600, fontSize: 16 }}>N8N Teacher</span>
             </div>
 
-            {/* Mode & Agent Selector - Always visible */}
-            <div style={{ display: 'flex', gap: 8, marginLeft: 16 }}>
-              {/* Mode Toggle */}
-              <div style={{ display: 'flex', background: 'var(--bg-tertiary)', borderRadius: 8, padding: 2 }}>
-                <button
-                  className={`option-btn ${mode === 'chat' ? 'active' : ''}`}
-                  style={{ borderRadius: 6 }}
-                  onClick={() => setMode('chat')}
-                >
-                  <MessageSquare size={14} />
-                  Chat
-                </button>
-                <a
-                  href="/article"
-                  className="option-btn"
-                  style={{ borderRadius: 6, textDecoration: 'none', color: 'inherit' }}
-                >
-                  <ImageIcon size={14} />
-                  Article
-                </a>
-{/* Temporarily hidden - keeping only Chat mode
-                <button
-                  className={`option-btn ${mode === 'image' ? 'active' : ''}`}
-                  style={{ borderRadius: 6 }}
-                  onClick={() => setMode('image')}
-                >
-                  <ImageIcon size={14} />
-                  Image
-                </button>
-                <button
-                  className={`option-btn ${mode === 'convert' ? 'active' : ''}`}
-                  style={{ borderRadius: 6 }}
-                  onClick={() => setMode('convert')}
-                >
-                  <RefreshCw size={14} />
-                  Convert
-                </button>
-                <button
-                  className={`option-btn ${mode === 'legal' ? 'active' : ''}`}
-                  style={{ borderRadius: 6 }}
-                  onClick={() => setMode('legal')}
-                >
-                  <Scale size={14} />
-                  Văn bản
-                </button>
-*/}
-              </div>
-
-              {/* Agent Selector (only for chat mode) */}
-              {mode === 'chat' && (
-                <div style={{ position: 'relative' }}>
-                  <button
-                    className="option-btn"
-                    onClick={() => {
-                      setShowModelMenu(false)
-                      setShowUserMenu(false)
-                      setShowLegalMenu(false)
-                      setShowAgentMenu(!showAgentMenu)
-                    }}
-                  >
-                    <AgentIcon size={14} />
-                    {selectedAgent.name}
-                    {selectedAgent.tier === 'pro' && <Crown size={12} style={{ color: '#fbbf24' }} />}
-                    <ChevronDown size={12} />
-                  </button>
-
-                  {showAgentMenu && (
-                    <div
-                      className="dropdown-menu agent-dropdown"
-                      style={{ top: 'calc(100% + 8px)', minWidth: 280, maxHeight: 400, overflowY: 'auto' }}
-                    >
-                      {AGENT_CATEGORIES.map((category) => {
-                        const categoryAgents = AGENTS.filter((a) => a.category === category)
-                        return (
-                          <div key={category}>
-                            <div style={{ padding: '8px 14px 4px', fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>
-                              {category}
-                            </div>
-                            {categoryAgents.map((agent) => {
-                              const Icon = AGENT_ICONS[agent.icon] || MessageSquare
-                              const isPro = agent.tier === 'pro'
-
-                              return (
-                                <div
-                                  key={agent.id}
-                                  className={`dropdown-item ${selectedAgent.id === agent.id ? 'active' : ''}`}
-                                  onClick={() => {
-                                    setSelectedAgent(agent)
-                                    setShowAgentMenu(false)
-                                  }}
-                                  style={selectedAgent.id === agent.id ? { background: 'var(--bg-hover)' } : {}}
-                                >
-                                  <Icon size={16} />
-                                  <div style={{ flex: 1 }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                      <span style={{ fontWeight: 500 }}>{agent.name}</span>
-                                      {isPro && (
-                                        <span style={{
-                                          fontSize: 9,
-                                          padding: '2px 6px',
-                                          borderRadius: 4,
-                                          background: 'linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)',
-                                          color: '#000',
-                                          fontWeight: 600,
-                                        }}>
-                                          2X TOKEN
-                                        </span>
-                                      )}
-                                    </div>
-                                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
-                                      {agent.description}
-                                    </div>
-                                  </div>
-                                </div>
-                              )
-                            })}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Legal Agent Selector (only for legal mode) */}
-              {mode === 'legal' && (
-                <div style={{ position: 'relative', zIndex: 100 }}>
-                  <button
-                    className="option-btn"
-                    onClick={() => {
-                      setShowAgentMenu(false)
-                      setShowUserMenu(false)
-                      setShowModelMenu(false)
-                      setShowLegalMenu(!showLegalMenu)
-                    }}
-                  >
-                    <Scale size={14} />
-                    {selectedLegalAgent.name}
-                    {selectedLegalAgent.tier === 'pro' && <Crown size={12} style={{ color: '#fbbf24' }} />}
-                    <ChevronDown size={12} />
-                  </button>
-
-                  {showLegalMenu && (
-                    <div
-                      className="dropdown-menu"
-                      style={{ position: 'absolute', top: 'calc(100% + 8px)', bottom: 'auto', minWidth: 280, zIndex: 9999, left: 0, right: 'auto' }}
-                    >
-                      {AGENTS.filter(a => a.category === 'legal').map((agent) => {
-                        const isSelected = selectedLegalAgent.id === agent.id
-                        const isPro = agent.tier === 'pro'
-
-                        return (
-                          <div
-                            key={agent.id}
-                            className={`dropdown-item ${isSelected ? 'active' : ''}`}
-                            onClick={() => {
-                              setSelectedLegalAgent(agent)
-                              setShowLegalMenu(false)
-                            }}
-                            style={isSelected ? { background: 'var(--bg-hover)' } : {}}
-                          >
-                            <Scale size={16} style={isPro ? { color: '#fbbf24' } : {}} />
-                            <div style={{ flex: 1 }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <span style={{ fontWeight: 500 }}>{agent.name}</span>
-                                {isPro && (
-                                  <span style={{
-                                    fontSize: 9,
-                                    padding: '2px 6px',
-                                    borderRadius: 4,
-                                    background: 'linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)',
-                                    color: '#000',
-                                    fontWeight: 600,
-                                  }}>
-                                    2X TOKEN
-                                  </span>
-                                )}
-                              </div>
-                              <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
-                                {agent.description}
-                              </div>
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Model Selector (only for image mode) */}
-              {mode === 'image' && (
-                <div style={{ position: 'relative', zIndex: 100 }}>
-                  <button
-                    className="option-btn"
-                    onClick={() => {
-                      setShowAgentMenu(false)
-                      setShowUserMenu(false)
-                      setShowLegalMenu(false)
-                      setShowModelMenu(!showModelMenu)
-                    }}
-                  >
-                    <Sparkles size={14} />
-                    {selectedImageModel.name}
-                    {selectedImageModel.tier === 'pro' && <Crown size={12} style={{ color: '#fbbf24' }} />}
-                    <ChevronDown size={12} />
-                  </button>
-
-                  {showModelMenu && (
-                    <div
-                      className="dropdown-menu"
-                      style={{ position: 'absolute', top: 'calc(100% + 8px)', bottom: 'auto', minWidth: 300, maxHeight: 400, overflowY: 'auto', zIndex: 9999, left: 0, right: 'auto' }}
-                    >
-                      {/* Base Models */}
-                      <div style={{ padding: '8px 14px 4px', fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>
-                        Base Models
-                      </div>
-                      {IMAGE_MODELS.filter(m => m.tier === 'base').map((model) => {
-                        const isSelected = selectedImageModel.id === model.id
-                        return (
-                          <div
-                            key={model.id}
-                            className={`dropdown-item ${isSelected ? 'active' : ''}`}
-                            onClick={() => {
-                              setSelectedImageModel(model)
-                              setShowModelMenu(false)
-                            }}
-                            style={isSelected ? { background: 'var(--bg-hover)' } : {}}
-                          >
-                            <Sparkles size={16} />
-                            <div style={{ flex: 1 }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <span style={{ fontWeight: 500 }}>{model.name}</span>
-                                <span style={{
-                                  fontSize: 9,
-                                  padding: '2px 6px',
-                                  borderRadius: 4,
-                                  background: model.speed === 'fast' ? 'rgba(34, 197, 94, 0.15)' : 'rgba(59, 130, 246, 0.15)',
-                                  color: model.speed === 'fast' ? '#22c55e' : '#3b82f6',
-                                  fontWeight: 500,
-                                }}>
-                                  {model.speed === 'fast' ? '⚡ Fast' : '⏱ Medium'}
-                                </span>
-                              </div>
-                              <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
-                                {model.description}
-                              </div>
-                            </div>
-                          </div>
-                        )
-                      })}
-
-                      {/* Pro Models (2x Token) */}
-                      <div style={{ padding: '12px 14px 4px', fontSize: 11, fontWeight: 600, color: '#fbbf24', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <Crown size={12} />
-                        Pro Models (2x Token)
-                      </div>
-                      {IMAGE_MODELS.filter(m => m.tier === 'pro').map((model) => {
-                        const isSelected = selectedImageModel.id === model.id
-
-                        return (
-                          <div
-                            key={model.id}
-                            className={`dropdown-item ${isSelected ? 'active' : ''}`}
-                            onClick={() => {
-                              setSelectedImageModel(model)
-                              setShowModelMenu(false)
-                            }}
-                            style={isSelected ? { background: 'var(--bg-hover)' } : {}}
-                          >
-                            <Sparkles size={16} style={{ color: '#fbbf24' }} />
-                            <div style={{ flex: 1 }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <span style={{ fontWeight: 500 }}>{model.name}</span>
-                                <span style={{
-                                  fontSize: 9,
-                                  padding: '2px 6px',
-                                  borderRadius: 4,
-                                  background: 'linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)',
-                                  color: '#000',
-                                  fontWeight: 600,
-                                }}>
-                                  2X TOKEN
-                                </span>
-                                <span style={{
-                                  fontSize: 9,
-                                  padding: '2px 6px',
-                                  borderRadius: 4,
-                                  background: model.quality === 'ultra' ? 'rgba(139, 92, 246, 0.15)' : 'rgba(34, 197, 94, 0.15)',
-                                  color: model.quality === 'ultra' ? '#8b5cf6' : '#22c55e',
-                                  fontWeight: 500,
-                                }}>
-                                  {model.quality === 'ultra' ? '✨ Ultra' : '⚡ Fast'}
-                                </span>
-                              </div>
-                              <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
-                                {model.description}
-                              </div>
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
           </div>
 
           {!isAuthenticated && !authLoading && (
             <div style={{ display: 'flex', gap: 8 }}>
               <a href="/auth/login" className="option-btn" style={{ textDecoration: 'none' }}>
-                Sign in
+                Đăng nhập
               </a>
               <a
                 href="/auth/register"
                 className="modal-btn"
                 style={{ width: 'auto', padding: '8px 16px', marginTop: 0, textDecoration: 'none' }}
               >
-                Sign up
+                Đăng ký
               </a>
             </div>
           )}
@@ -931,19 +517,11 @@ export default function Home() {
 
         {/* Chat Area */}
         <div className="chat-area">
-          {mode === 'convert' ? (
-            <div className="convert-screen">
-              <h1 className="welcome-title">Document Converter</h1>
-              <p className="welcome-subtitle">
-                Convert Word documents to PDF and vice versa.
-              </p>
-              <DocumentConverter />
-            </div>
-          ) : messages.length === 0 ? (
+          {messages.length === 0 ? (
             <div className="welcome-screen">
-              <h1 className="welcome-title">What will you create today?</h1>
+              <h1 className="welcome-title">Xin chào! Tôi là N8N Teacher</h1>
               <p className="welcome-subtitle">
-                Generate images with AI or chat with specialized assistants.
+                Tôi sẽ giúp bạn học n8n workflow automation. Hỏi bất cứ điều gì về n8n!
               </p>
 
               <div className="suggestions">
@@ -954,7 +532,7 @@ export default function Home() {
                     onClick={() => handleSuggestionClick(suggestion)}
                   >
                     <div className="suggestion-title">
-                      {suggestion.mode === 'image' ? '🖼️' : '💬'} {suggestion.title}
+                      🔧 {suggestion.title}
                     </div>
                     <div className="suggestion-desc">{suggestion.desc}</div>
                   </button>
@@ -969,34 +547,156 @@ export default function Home() {
                   className={`message ${message.role === 'user' ? 'message-user' : 'message-ai'}`}
                 >
                   {message.role === 'assistant' && (
-                    <div className="message-avatar">
-                      <Sparkles size={16} color="white" />
+                    <div className="message-avatar" style={{ background: 'linear-gradient(135deg, #ff6b35 0%, #f7931e 100%)' }}>
+                      <Play size={16} color="white" />
                     </div>
                   )}
 
                   <div className="message-content">
                     {message.isLoading && !message.content ? (
-                      <div className="loading-dots">
-                        <div className="loading-dot" />
-                        <div className="loading-dot" />
-                        <div className="loading-dot" />
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 12,
+                        padding: '12px 0'
+                      }}>
+                        <div style={{
+                          width: 32,
+                          height: 32,
+                          borderRadius: '50%',
+                          background: 'linear-gradient(135deg, #ff6b35 0%, #f7931e 100%)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          animation: 'pulse 2s ease-in-out infinite'
+                        }}>
+                          <Sparkles size={16} color="white" />
+                        </div>
+                        <div>
+                          <div style={{
+                            fontWeight: 500,
+                            fontSize: 14,
+                            color: 'var(--text-primary)',
+                            marginBottom: 4
+                          }}>
+                            Đang suy nghĩ...
+                          </div>
+                          <div className="thinking-dots" style={{
+                            display: 'flex',
+                            gap: 4
+                          }}>
+                            <div className="thinking-dot" />
+                            <div className="thinking-dot" />
+                            <div className="thinking-dot" />
+                          </div>
+                        </div>
                       </div>
                     ) : (
                       <>
                         <div style={{ whiteSpace: 'pre-wrap' }}>{message.content}</div>
-                        {message.settings && message.role === 'user' && (
-                          <div style={{ display: 'flex', gap: 6, marginTop: 8, opacity: 0.7, fontSize: 12, flexWrap: 'wrap' }}>
-                            {message.settings.model && (
-                              <>
-                                <span style={{ color: '#8b5cf6', fontWeight: 500 }}>{message.settings.model}</span>
-                                <span>•</span>
-                              </>
-                            )}
-                            <span>{message.settings.aspectRatio}</span>
-                            <span>•</span>
-                            <span>{message.settings.resolution}</span>
+
+                        {/* Workflow Display */}
+                        {message.workflow && !message.isLoading && (
+                          <div style={{
+                            marginTop: 16,
+                            padding: 16,
+                            background: 'rgba(255, 107, 53, 0.1)',
+                            borderRadius: 12,
+                            border: '1px solid rgba(255, 107, 53, 0.3)',
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                              <Play size={18} color="#ff6b35" />
+                              <span style={{ fontWeight: 600, color: '#ff6b35' }}>n8n Workflow</span>
+                            </div>
+
+                            {/* Workflow Actions */}
+                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                              {!message.workflowUrl ? (
+                                <button
+                                  onClick={() => handleCreateWorkflow(message.workflow!, message.id)}
+                                  disabled={creatingWorkflow === message.id}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 6,
+                                    padding: '8px 16px',
+                                    background: 'linear-gradient(135deg, #ff6b35 0%, #f7931e 100%)',
+                                    color: '#fff',
+                                    border: 'none',
+                                    borderRadius: 8,
+                                    cursor: creatingWorkflow === message.id ? 'wait' : 'pointer',
+                                    fontWeight: 500,
+                                    fontSize: 13,
+                                  }}
+                                >
+                                  {creatingWorkflow === message.id ? (
+                                    <>
+                                      <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+                                      Đang tạo...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Play size={14} />
+                                      Tạo Workflow
+                                    </>
+                                  )}
+                                </button>
+                              ) : (
+                                <a
+                                  href={message.workflowUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 6,
+                                    padding: '8px 16px',
+                                    background: 'rgba(34, 197, 94, 0.2)',
+                                    color: '#22c55e',
+                                    border: '1px solid rgba(34, 197, 94, 0.3)',
+                                    borderRadius: 8,
+                                    textDecoration: 'none',
+                                    fontWeight: 500,
+                                    fontSize: 13,
+                                  }}
+                                >
+                                  <ExternalLink size={14} />
+                                  Mở trong n8n
+                                </a>
+                              )}
+
+                              <button
+                                onClick={() => handleCopyWorkflow(message.workflow!, message.id)}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 6,
+                                  padding: '8px 16px',
+                                  background: 'transparent',
+                                  color: 'var(--text-secondary)',
+                                  border: '1px solid var(--border-color)',
+                                  borderRadius: 8,
+                                  cursor: 'pointer',
+                                  fontWeight: 500,
+                                  fontSize: 13,
+                                }}
+                              >
+                                {copiedWorkflow === message.id ? (
+                                  <>
+                                    <Check size={14} color="#22c55e" />
+                                    Đã copy!
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy size={14} />
+                                    Copy JSON
+                                  </>
+                                )}
+                              </button>
+                            </div>
                           </div>
                         )}
+
                         {message.usage && (
                           <div style={{ display: 'flex', gap: 8, marginTop: 8, fontSize: 11, color: 'var(--text-tertiary)' }}>
                             <span>{message.usage.tokens} tokens</span>
@@ -1031,7 +731,22 @@ export default function Home() {
                           </div>
                         )}
                         {message.isLoading && message.content && (
-                          <Loader2 size={14} style={{ marginTop: 8, animation: 'spin 1s linear infinite' }} />
+                          <div style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            marginTop: 12,
+                            padding: '6px 12px',
+                            background: 'linear-gradient(135deg, rgba(255, 107, 53, 0.15) 0%, rgba(247, 147, 30, 0.15) 100%)',
+                            border: '1px solid rgba(255, 107, 53, 0.3)',
+                            borderRadius: 20,
+                            fontSize: 12,
+                            fontWeight: 500,
+                            color: '#ff6b35'
+                          }}>
+                            <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} />
+                            Đang xử lý...
+                          </div>
                         )}
                       </>
                     )}
@@ -1043,44 +758,9 @@ export default function Home() {
           )}
         </div>
 
-        {/* Input Area - Hide for convert mode */}
-        {mode !== 'convert' && (
+        {/* Input Area */}
         <div className="input-area">
           <div className="input-container" style={{ position: 'relative' }}>
-            {/* Settings Panel (Image mode only) */}
-            {showSettings && mode === 'image' && (
-              <div className="settings-panel">
-                <div className="settings-row">
-                  <span className="settings-label">Aspect Ratio</span>
-                  <div className="settings-options">
-                    {(['1:1', '16:9', '9:16', '4:3', '3:4'] as AspectRatio[]).map((ratio) => (
-                      <button
-                        key={ratio}
-                        className={`settings-option ${aspectRatio === ratio ? 'active' : ''}`}
-                        onClick={() => setAspectRatio(ratio)}
-                      >
-                        {ratio}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="settings-row">
-                  <span className="settings-label">Resolution</span>
-                  <div className="settings-options">
-                    {(['1K', '2K', '4K'] as Resolution[]).map((res) => (
-                      <button
-                        key={res}
-                        className={`settings-option ${resolution === res ? 'active' : ''}`}
-                        onClick={() => setResolution(res)}
-                      >
-                        {res}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-
             <div className="input-wrapper" style={{ overflow: 'visible' }}>
               {/* Upload Preview */}
               {uploadedImages.length > 0 && (
@@ -1100,7 +780,7 @@ export default function Home() {
               <div className="options-row" style={{ overflow: 'visible' }}>
                 <button className="option-btn" onClick={() => fileInputRef.current?.click()}>
                   <Upload size={14} />
-                  Add image
+                  Thêm ảnh
                 </button>
                 <input
                   ref={fileInputRef}
@@ -1110,17 +790,6 @@ export default function Home() {
                   style={{ display: 'none' }}
                   onChange={handleFileUpload}
                 />
-
-                {mode === 'image' && (
-                  <button
-                    className={`option-btn ${showSettings ? 'active' : ''}`}
-                    onClick={() => setShowSettings(!showSettings)}
-                  >
-                    <Settings size={14} />
-                    {aspectRatio} • {resolution}
-                    <ChevronDown size={12} />
-                  </button>
-                )}
               </div>
 
               {/* Text Input */}
@@ -1129,12 +798,8 @@ export default function Home() {
                 className="prompt-input"
                 placeholder={
                   isAuthenticated
-                    ? mode === 'image'
-                      ? 'Describe the image you want to create...'
-                      : mode === 'legal'
-                      ? `Hỏi ${selectedLegalAgent.name}...`
-                      : `Ask ${selectedAgent.name}...`
-                    : 'Sign in to start...'
+                    ? 'Hỏi về n8n workflow automation...'
+                    : 'Đăng nhập để bắt đầu...'
                 }
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
@@ -1154,7 +819,6 @@ export default function Home() {
             </div>
           </div>
         </div>
-        )}
       </main>
 
       {/* Logout Confirmation Modal */}
