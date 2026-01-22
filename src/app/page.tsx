@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
   Plus,
@@ -80,7 +80,7 @@ const SUGGESTIONS = [
   { title: 'Webhook + Slack', desc: 'Nhận webhook và gửi thông báo Slack' },
 ]
 
-export default function Home() {
+function HomePage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { user, isAuthenticated, isLoading: authLoading, logout, refreshUser } = useAuth()
@@ -1033,5 +1033,13 @@ export default function Home() {
       )}
 
     </div>
+  )
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#0a0a0f' }}><Loader2 size={32} style={{ animation: 'spin 1s linear infinite', color: '#8b5cf6' }} /></div>}>
+      <HomePage />
+    </Suspense>
   )
 }

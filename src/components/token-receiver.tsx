@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, Suspense } from 'react'
 import { useSearchParams, usePathname } from 'next/navigation'
 import { setAuthToken, getMe } from '@/lib/api'
 
@@ -8,7 +8,7 @@ import { setAuthToken, getMe } from '@/lib/api'
  * Component xử lý nhận token từ URL parameter
  * Cho phép login qua link: https://domain.com?token=xxx
  */
-export function TokenReceiver() {
+function TokenReceiverInner() {
   const searchParams = useSearchParams()
   const pathname = usePathname()
   const processingRef = useRef(false)
@@ -166,5 +166,13 @@ export function TokenReceiver() {
         }
       `}</style>
     </div>
+  )
+}
+
+export function TokenReceiver() {
+  return (
+    <Suspense fallback={null}>
+      <TokenReceiverInner />
+    </Suspense>
   )
 }

@@ -1,13 +1,13 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import { useParams, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Calendar, Clock, Eye, User } from 'lucide-react'
 import { getBlogPostBySlug, type BlogPost, type BlockContent } from '@/lib/api'
 import './blog-post.css'
 
-export default function BlogPostPage() {
+function BlogPostContent() {
   const params = useParams()
   const searchParams = useSearchParams()
   const slug = params.slug as string
@@ -134,6 +134,18 @@ export default function BlogPostPage() {
         </div>
       </article>
     </div>
+  )
+}
+
+export default function BlogPostPage() {
+  return (
+    <Suspense fallback={
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#0a0a0f' }}>
+        <div style={{ width: 32, height: 32, border: '3px solid rgba(139, 92, 246, 0.2)', borderTopColor: '#8b5cf6', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+      </div>
+    }>
+      <BlogPostContent />
+    </Suspense>
   )
 }
 

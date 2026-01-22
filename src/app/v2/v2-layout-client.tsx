@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, createContext, useContext } from 'react'
+import { useState, useEffect, useCallback, createContext, useContext, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
   Plus,
@@ -43,7 +43,7 @@ export function useConversation() {
   return context
 }
 
-export default function V2LayoutClient({ children }: { children: React.ReactNode }) {
+function V2LayoutClientInner({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { user, isAuthenticated, isLoading: authLoading, logout } = useAuth()
@@ -472,5 +472,13 @@ export default function V2LayoutClient({ children }: { children: React.ReactNode
       )}
     </div>
     </ConversationContext.Provider>
+  )
+}
+
+export default function V2LayoutClient({ children }: { children: React.ReactNode }) {
+  return (
+    <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#0a0a0f' }}><Loader2 size={32} style={{ animation: 'spin 1s linear infinite', color: '#8b5cf6' }} /></div>}>
+      <V2LayoutClientInner>{children}</V2LayoutClientInner>
+    </Suspense>
   )
 }
