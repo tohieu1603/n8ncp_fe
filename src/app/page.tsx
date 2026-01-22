@@ -15,16 +15,13 @@ import {
   Loader2,
   DollarSign,
   Trash2,
-<<<<<<< HEAD
   Play,
   ExternalLink,
   Copy,
   Check,
   Settings,
-=======
-  Check,
   MessageCircle,
->>>>>>> d49635003a6332ce2a257df3fc3104b94d355317
+  Pencil,
 } from 'lucide-react'
 import Image from 'next/image'
 import { useAuth } from '@/contexts/auth-context'
@@ -36,8 +33,6 @@ import {
   InsufficientTokensError,
   getDownloadUrl,
 } from '@/lib/api'
-<<<<<<< HEAD
-=======
 import {
   getConversations,
   createConversation,
@@ -47,10 +42,6 @@ import {
   type Conversation,
   type ConversationMessage,
 } from '@/lib/api/conversations'
-import DocumentConverter from '@/components/document-converter'
->>>>>>> d49635003a6332ce2a257df3fc3104b94d355317
-
-type Mode = 'chat'
 
 // Parse n8n-workflow code blocks from message content
 function parseWorkflowFromContent(content: string): { text: string; workflow: object | null } {
@@ -82,19 +73,6 @@ interface Message {
   workflowUrl?: string
 }
 
-<<<<<<< HEAD
-interface ChatSession {
-  id: string
-  title: string
-  messages: Message[]
-  mode: Mode
-  conversationId?: string
-  createdAt: Date
-}
-=======
-// ChatSession is now fetched from API as Conversation
->>>>>>> d49635003a6332ce2a257df3fc3104b94d355317
-
 const SUGGESTIONS = [
   { title: 'n8n là gì?', desc: 'Giới thiệu về n8n workflow automation' },
   { title: 'Tạo workflow gửi email', desc: 'Workflow tự động gửi email khi có trigger' },
@@ -114,22 +92,11 @@ export default function Home() {
   const [prompt, setPrompt] = useState('')
   const [uploadedImages, setUploadedImages] = useState<string[]>([])
   const [showUserMenu, setShowUserMenu] = useState(false)
-<<<<<<< HEAD
-  const [conversationId, setConversationId] = useState<string | null>(null)
   const [copiedWorkflow, setCopiedWorkflow] = useState<string | null>(null)
   const [creatingWorkflow, setCreatingWorkflow] = useState<string | null>(null)
-=======
-  const [showAgentMenu, setShowAgentMenu] = useState(false)
-  const [showModelMenu, setShowModelMenu] = useState(false)
-  const [showLegalMenu, setShowLegalMenu] = useState(false)
-  const [mode, setMode] = useState<Mode>('chat')
-  const [selectedAgent, setSelectedAgent] = useState<Agent>(AGENTS[0])
-  const [selectedImageModel, setSelectedImageModel] = useState<ImageModel>(IMAGE_MODELS[0])
-  const [selectedLegalAgent, setSelectedLegalAgent] = useState<Agent>(AGENTS.find(a => a.id === 'legal_base')!)
   const [isLoadingConversations, setIsLoadingConversations] = useState(false)
   const [editingConversationId, setEditingConversationId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
->>>>>>> d49635003a6332ce2a257df3fc3104b94d355317
 
   const chatEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -148,29 +115,6 @@ export default function Home() {
     }
   }, [prompt])
 
-<<<<<<< HEAD
-
-  const createNewSession = () => {
-    const newSession: ChatSession = {
-      id: Date.now().toString(),
-      title: 'Cuộc trò chuyện mới',
-      messages: [],
-      mode: 'chat',
-      createdAt: new Date(),
-    }
-    setSessions([newSession, ...sessions])
-    setCurrentSessionId(newSession.id)
-    setMessages([])
-    setConversationId(null)
-  }
-
-  const selectSession = (sessionId: string) => {
-    const session = sessions.find((s) => s.id === sessionId)
-    if (session) {
-      setCurrentSessionId(sessionId)
-      setMessages([])
-      setConversationId(session.conversationId || null)
-=======
   // Sync conversationId from URL on mount
   useEffect(() => {
     const convId = searchParams.get('c')
@@ -223,9 +167,6 @@ export default function Home() {
           usage: m.tokensUsed ? { tokens: m.tokensUsed, cost: 0 } : undefined,
         }))
         setMessages(loadedMessages)
-        // Set agent from conversation
-        const agent = AGENTS.find((a) => a.id === conv.agentId)
-        if (agent) setSelectedAgent(agent)
       } catch (error) {
         console.error('Failed to load conversation:', error)
         setMessages([])
@@ -243,7 +184,6 @@ export default function Home() {
       setMessages([])
     } catch (error) {
       console.error('Failed to create conversation:', error)
->>>>>>> d49635003a6332ce2a257df3fc3104b94d355317
     }
   }
 
@@ -356,95 +296,10 @@ export default function Home() {
     }
   }
 
-<<<<<<< HEAD
   const handleCopyWorkflow = (workflow: object, messageId: string) => {
     navigator.clipboard.writeText(JSON.stringify(workflow, null, 2))
     setCopiedWorkflow(messageId)
     setTimeout(() => setCopiedWorkflow(null), 2000)
-=======
-  const handleImageGeneration = async () => {
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: prompt,
-      settings: { aspectRatio, resolution, model: selectedImageModel.name },
-    }
-
-    const loadingMessage: Message = {
-      id: (Date.now() + 1).toString(),
-      role: 'assistant',
-      content: 'Generating your image...',
-      isLoading: true,
-    }
-
-    const newMessages = [...messages, userMessage, loadingMessage]
-    setMessages(newMessages)
-    setPrompt('')
-    setUploadedImages([])
-
-    try {
-      const response = await generateImage({
-        prompt,
-        image_input: uploadedImages,
-        aspect_ratio: aspectRatio,
-        resolution,
-        output_format: 'png',
-        model: selectedImageModel.id,
-      })
-
-      const pollResult = async (taskId: string, attempts = 0): Promise<void> => {
-        if (attempts >= 60) {
-          updateAssistantMessage(loadingMessage.id, {
-            isLoading: false,
-            error: 'Generation timed out',
-            content: 'Sorry, the image generation timed out. Please try again.',
-          })
-          return
-        }
-
-        const status = await getTaskStatus(taskId, { prompt, aspect_ratio: aspectRatio, resolution })
-
-        if (status.status === 'completed' && status.output?.media_url) {
-          updateAssistantMessage(loadingMessage.id, {
-            isLoading: false,
-            imageUrl: status.output.media_url,
-            content: 'Here\'s your generated image!',
-          })
-          refreshUser()
-        } else if (status.status === 'failed') {
-          updateAssistantMessage(loadingMessage.id, {
-            isLoading: false,
-            error: status.error || 'Generation failed',
-            content: 'Sorry, something went wrong. Please try again.',
-          })
-        } else {
-          setTimeout(() => pollResult(taskId, attempts + 1), 2000)
-        }
-      }
-
-      pollResult(response.taskId)
-    } catch (error) {
-      // Handle insufficient tokens error
-      const errorMsg = error instanceof Error ? error.message : 'Failed to generate'
-      if (errorMsg.includes('token') || errorMsg.includes('insufficient')) {
-        updateAssistantMessage(loadingMessage.id, {
-          isLoading: false,
-          error: 'Hết token',
-          content: 'Bạn đã hết token! Vui lòng nạp thêm để tiếp tục sử dụng.',
-        })
-        setTimeout(() => {
-          window.location.href = '/account/billing'
-        }, 2000)
-        return
-      }
-
-      updateAssistantMessage(loadingMessage.id, {
-        isLoading: false,
-        error: errorMsg,
-        content: 'Xin lỗi, đã có lỗi xảy ra. Vui lòng thử lại.',
-      })
-    }
->>>>>>> d49635003a6332ce2a257df3fc3104b94d355317
   }
 
   const handleChatMessage = async () => {
@@ -452,7 +307,7 @@ export default function Home() {
     let convId = currentConversationId
     if (!convId) {
       try {
-        const newConv = await createConversation(prompt.slice(0, 30), selectedAgent.id)
+        const newConv = await createConversation(prompt.slice(0, 30))
         setConversations([newConv, ...conversations])
         convId = newConv.id
         updateConversationId(convId)
@@ -483,15 +338,10 @@ export default function Home() {
       const chatHistory = messages.map((m) => ({ role: m.role, content: m.content }))
       chatHistory.push({ role: 'user', content: prompt })
 
-<<<<<<< HEAD
       // Use image URL if uploaded
       const imageUrl = uploadedImages.length > 0 ? uploadedImages[0] : undefined
 
-      for await (const chunk of streamChat(chatHistory, imageUrl, conversationId || undefined)) {
-=======
-      const agentToUse = mode === 'legal' ? selectedLegalAgent : selectedAgent
-      for await (const chunk of streamChat(chatHistory, agentToUse.id, undefined, convId || undefined)) {
->>>>>>> d49635003a6332ce2a257df3fc3104b94d355317
+      for await (const chunk of streamChat(chatHistory, imageUrl, convId || undefined)) {
         if (chunk.content) {
           fullContent += chunk.content
           // Parse workflow while streaming
@@ -503,16 +353,6 @@ export default function Home() {
           })
         }
         if (chunk.done) {
-          // Update conversation ID for future messages
-          if (chunk.conversationId) {
-            setConversationId(chunk.conversationId)
-            // Update session with conversation ID
-            if (currentSessionId) {
-              setSessions(sessions.map(s =>
-                s.id === currentSessionId ? { ...s, conversationId: chunk.conversationId } : s
-              ))
-            }
-          }
           // Final parse
           const { text, workflow } = parseWorkflowFromContent(fullContent)
           updateAssistantMessage(loadingMessage.id, {
@@ -548,32 +388,6 @@ export default function Home() {
     }
   }
 
-<<<<<<< HEAD
-  const updateSession = (msgs: Message[]) => {
-    if (!currentSessionId) {
-      const newSession: ChatSession = {
-        id: Date.now().toString(),
-        title: prompt.slice(0, 30) + (prompt.length > 30 ? '...' : ''),
-        messages: msgs,
-        mode: 'chat',
-        conversationId: conversationId || undefined,
-        createdAt: new Date(),
-      }
-      setSessions([newSession, ...sessions])
-      setCurrentSessionId(newSession.id)
-    } else {
-      setSessions(
-        sessions.map((s) =>
-          s.id === currentSessionId
-            ? { ...s, messages: msgs, title: s.title === 'Cuộc trò chuyện mới' ? prompt.slice(0, 30) : s.title }
-            : s
-        )
-      )
-    }
-  }
-
-=======
->>>>>>> d49635003a6332ce2a257df3fc3104b94d355317
   const updateAssistantMessage = (messageId: string, updates: Partial<Message>) => {
     setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, ...updates } : m)))
   }
@@ -803,14 +617,9 @@ export default function Home() {
               </div>
               <span style={{ fontWeight: 600, fontSize: 16 }}>N8N Teacher</span>
             </div>
-
           </div>
 
           {!isAuthenticated && !authLoading && (
-<<<<<<< HEAD
-            <div style={{ display: 'flex', gap: 8 }}>
-              <a href="/auth/login" className="option-btn" style={{ textDecoration: 'none' }}>
-=======
             <div style={{ display: 'flex', gap: 8, flexShrink: 0, alignItems: 'center' }}>
               <a
                 href="/auth/login"
@@ -824,7 +633,6 @@ export default function Home() {
                   transition: 'color 0.15s'
                 }}
               >
->>>>>>> d49635003a6332ce2a257df3fc3104b94d355317
                 Đăng nhập
               </a>
               <a
@@ -1227,4 +1035,3 @@ export default function Home() {
     </div>
   )
 }
-
