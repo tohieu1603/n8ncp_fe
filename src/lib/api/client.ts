@@ -92,13 +92,23 @@ export async function fetchApi<T>(
     throw new ForbiddenError((json as ApiResponse<T>).error || 'Access denied')
   }
 
-  const json: ApiResponse<T> = await response.json()
+  const json = await response.json()
 
-  if (!response.ok || !json.success) {
-    throw new Error(json.error || 'Request failed')
+  // Handle both response formats:
+  // - Wrapped: { success: boolean, data: T } (legacy)
+  // - Direct: T (Django Ninja style)
+  if (json && typeof json === 'object' && 'success' in json) {
+    if (!json.success) {
+      throw new Error(json.error || json.message || 'Request failed')
+    }
+    return json.data as T
   }
 
-  return json.data as T
+  if (!response.ok) {
+    throw new Error(json?.detail || json?.error || json?.message || 'Request failed')
+  }
+
+  return json as T
 }
 
 // For streaming endpoints

@@ -25,28 +25,18 @@ export interface ConversationWithMessages extends Conversation {
   messages: ConversationMessage[]
 }
 
-export interface ConversationsResponse {
-  conversations: Conversation[]
-  pagination: {
-    page: number
-    limit: number
-    total: number
-    totalPages: number
-  }
-}
-
 /**
  * Get list of user's conversations
  */
-export async function getConversations(page = 1, limit = 20): Promise<ConversationsResponse> {
-  return fetchApi<ConversationsResponse>(`/api/conversations?page=${page}&limit=${limit}`)
+export async function getConversations(limit = 50, offset = 0): Promise<Conversation[]> {
+  return fetchApi<Conversation[]>(`/api/chat/conversations?limit=${limit}&offset=${offset}`)
 }
 
 /**
  * Create a new conversation
  */
 export async function createConversation(title?: string, agentId?: string): Promise<Conversation> {
-  return fetchApi<Conversation>('/api/conversations', {
+  return fetchApi<Conversation>('/api/chat/conversations', {
     method: 'POST',
     body: JSON.stringify({ title, agentId }),
   })
@@ -56,7 +46,7 @@ export async function createConversation(title?: string, agentId?: string): Prom
  * Get a conversation with its messages
  */
 export async function getConversation(id: string): Promise<ConversationWithMessages> {
-  return fetchApi<ConversationWithMessages>(`/api/conversations/${id}`)
+  return fetchApi<ConversationWithMessages>(`/api/chat/conversations/${id}`)
 }
 
 /**
@@ -66,7 +56,7 @@ export async function updateConversation(
   id: string,
   data: { title?: string; agentId?: string }
 ): Promise<Conversation> {
-  return fetchApi<Conversation>(`/api/conversations/${id}`, {
+  return fetchApi<Conversation>(`/api/chat/conversations/${id}`, {
     method: 'PUT',
     body: JSON.stringify(data),
   })
@@ -76,7 +66,7 @@ export async function updateConversation(
  * Delete a conversation
  */
 export async function deleteConversation(id: string): Promise<void> {
-  await fetchApi(`/api/conversations/${id}`, {
+  await fetchApi(`/api/chat/conversations/${id}`, {
     method: 'DELETE',
   })
 }

@@ -8,27 +8,40 @@ import {
   BookOpen,
   Loader2,
   Bot,
-  Brain,
   ChevronRight,
   ChevronDown,
+  Copy,
   Check,
-  Inbox,
-  Search,
-  Database,
-  Cpu,
-  SendHorizontal,
 } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+
+function CodeBlock({ children, className }: { children: string; className?: string }) {
+  const [copied, setCopied] = useState(false)
+  const language = className?.replace('language-', '') || ''
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(children.trim())
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <div className="code-block-wrapper">
+      <div className="code-block-header">
+        {language && <span className="code-block-lang">{language}</span>}
+        <button onClick={handleCopy} className="code-copy-btn">
+          {copied ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy</>}
+        </button>
+      </div>
+      <pre><code className={className}>{children}</code></pre>
+    </div>
+  )
+}
 import { useConversation } from './v2-layout-client'
 import { streamChat } from '@/lib/api/chat'
 import { getConversation, createConversation, type ConversationMessage } from '@/lib/api/conversations'
 import { useAuth } from '@/contexts/auth-context'
-
-interface WorkflowNode {
-  id: string
-  label: string
-  icon: 'input' | 'search' | 'database' | 'ai' | 'output'
-  status: 'idle' | 'running' | 'completed'
-}
 
 interface Message {
   id: string
@@ -58,18 +71,8 @@ export default function V2Page() {
   const [messages, setMessages] = useState<Message[]>([])
   const [inputValue, setInputValue] = useState('')
   const [isThinking, setIsThinking] = useState(false)
-  const [workflowNodes, setWorkflowNodes] = useState<WorkflowNode[]>([
-    { id: '1', label: 'Nhận input', icon: 'input', status: 'idle' },
-    { id: '2', label: 'Phân tích', icon: 'search', status: 'idle' },
-    { id: '3', label: 'Truy xuất', icon: 'database', status: 'idle' },
-    { id: '4', label: 'Tạo response', icon: 'ai', status: 'idle' },
-    { id: '5', label: 'Output', icon: 'output', status: 'idle' },
-  ])
-  const [thinkingHeight, setThinkingHeight] = useState(250) // px
-  const [isResizing, setIsResizing] = useState(false)
   const [rightPanelWidth, setRightPanelWidth] = useState(340)
   const [isResizingRight, setIsResizingRight] = useState(false)
-  const [isResizingCorner, setIsResizingCorner] = useState(false)
   const [exercisesExpanded, setExercisesExpanded] = useState(true)
   const [guidesExpanded, setGuidesExpanded] = useState(true)
   const [selectedExercise, setSelectedExercise] = useState<string | null>(null)
@@ -77,7 +80,6 @@ export default function V2Page() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
 
   const exercises: Exercise[] = [
     { id: '1', title: 'Bài 1: Giới thiệu cơ bản', description: 'Làm quen với AI Agent', completed: true },
@@ -127,40 +129,6 @@ export default function V2Page() {
     }
   }, [inputValue])
 
-  // Resize handlers for thinking height
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault()
-    setIsResizing(true)
-  }, [])
-
-  const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (!isResizing || !containerRef.current) return
-    const containerRect = containerRef.current.getBoundingClientRect()
-    const newHeight = e.clientY - containerRect.top
-    // Min 100px, max 60% of container
-    const maxHeight = containerRect.height * 0.6
-    setThinkingHeight(Math.max(100, Math.min(newHeight, maxHeight)))
-  }, [isResizing])
-
-  const handleMouseUp = useCallback(() => {
-    setIsResizing(false)
-  }, [])
-
-  useEffect(() => {
-    if (isResizing) {
-      document.addEventListener('mousemove', handleMouseMove)
-      document.addEventListener('mouseup', handleMouseUp)
-      document.body.style.cursor = 'row-resize'
-      document.body.style.userSelect = 'none'
-    }
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove)
-      document.removeEventListener('mouseup', handleMouseUp)
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-    }
-  }, [isResizing, handleMouseMove, handleMouseUp])
-
   // Resize handlers for right panel width
   const handleRightMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
@@ -170,7 +138,6 @@ export default function V2Page() {
   const handleRightMouseMove = useCallback((e: MouseEvent) => {
     if (!isResizingRight) return
     const newWidth = window.innerWidth - e.clientX
-    // Min 200px, max 600px
     setRightPanelWidth(Math.max(200, Math.min(newWidth, 600)))
   }, [isResizingRight])
 
@@ -193,45 +160,6 @@ export default function V2Page() {
     }
   }, [isResizingRight, handleRightMouseMove, handleRightMouseUp])
 
-  // Resize handlers for corner (both directions)
-  const handleCornerMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault()
-    setIsResizingCorner(true)
-  }, [])
-
-  const handleCornerMouseMove = useCallback((e: MouseEvent) => {
-    if (!isResizingCorner || !containerRef.current) return
-
-    // Update thinking height
-    const containerRect = containerRef.current.getBoundingClientRect()
-    const newHeight = e.clientY - containerRect.top
-    const maxHeight = containerRect.height * 0.6
-    setThinkingHeight(Math.max(100, Math.min(newHeight, maxHeight)))
-
-    // Update right panel width
-    const newWidth = window.innerWidth - e.clientX
-    setRightPanelWidth(Math.max(200, Math.min(newWidth, 600)))
-  }, [isResizingCorner])
-
-  const handleCornerMouseUp = useCallback(() => {
-    setIsResizingCorner(false)
-  }, [])
-
-  useEffect(() => {
-    if (isResizingCorner) {
-      document.addEventListener('mousemove', handleCornerMouseMove)
-      document.addEventListener('mouseup', handleCornerMouseUp)
-      document.body.style.cursor = 'move'
-      document.body.style.userSelect = 'none'
-    }
-    return () => {
-      document.removeEventListener('mousemove', handleCornerMouseMove)
-      document.removeEventListener('mouseup', handleCornerMouseUp)
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-    }
-  }, [isResizingCorner, handleCornerMouseMove, handleCornerMouseUp])
-
   const handleSendMessage = async () => {
     if (!inputValue.trim() || !isAuthenticated) return
 
@@ -247,14 +175,6 @@ export default function V2Page() {
     setInputValue('')
     setIsThinking(true)
 
-    // Reset workflow nodes
-    setWorkflowNodes(nodes => nodes.map(n => ({ ...n, status: 'idle' as const })))
-
-    // Helper function
-    const updateNode = (id: string, status: 'running' | 'completed') => {
-      setWorkflowNodes(nodes => nodes.map(n => n.id === id ? { ...n, status } : n))
-    }
-
     try {
       // Create conversation if none selected
       let convId = currentConversationId
@@ -264,14 +184,6 @@ export default function V2Page() {
         setCurrentConversationId(convId)
         await refreshConversations()
       }
-
-      // Node 1: Nhận input
-      updateNode('1', 'running')
-      await new Promise((resolve) => setTimeout(resolve, 300))
-      updateNode('1', 'completed')
-
-      // Node 2: Phân tích
-      updateNode('2', 'running')
 
       // Build messages for API
       const apiMessages = [...messages, userMessage].map(m => ({
@@ -288,16 +200,6 @@ export default function V2Page() {
         timestamp: new Date(),
         isLoading: true,
       }])
-
-      updateNode('2', 'completed')
-
-      // Node 3: Truy xuất
-      updateNode('3', 'running')
-      await new Promise((resolve) => setTimeout(resolve, 200))
-      updateNode('3', 'completed')
-
-      // Node 4: Tạo response - stream
-      updateNode('4', 'running')
 
       let fullContent = ''
       for await (const chunk of streamChat(apiMessages, undefined, convId)) {
@@ -317,13 +219,6 @@ export default function V2Page() {
         }
       }
 
-      updateNode('4', 'completed')
-
-      // Node 5: Output
-      updateNode('5', 'running')
-      await new Promise((resolve) => setTimeout(resolve, 200))
-      updateNode('5', 'completed')
-
     } catch (error) {
       console.error('Chat error:', error)
       setMessages((prev) => [...prev, {
@@ -332,8 +227,6 @@ export default function V2Page() {
         content: 'Xin lỗi, đã có lỗi xảy ra. Vui lòng thử lại.',
         timestamp: new Date(),
       }])
-      // Reset nodes on error
-      setWorkflowNodes(nodes => nodes.map(n => ({ ...n, status: 'idle' as const })))
     }
 
     setIsThinking(false)
@@ -348,9 +241,8 @@ export default function V2Page() {
 
   return (
     <div style={{ display: 'flex', flex: 1, height: 'calc(100vh - 76px)', overflow: 'hidden', position: 'relative' }}>
-      {/* Center: Agent Thinking + Chat */}
+      {/* Center: Chat */}
       <div
-        ref={containerRef}
         style={{
           flex: 1,
           display: 'flex',
@@ -358,178 +250,6 @@ export default function V2Page() {
           minWidth: 0,
         }}
       >
-        {/* Agent Workflow Window */}
-        <div
-          style={{
-            height: thinkingHeight,
-            minHeight: 100,
-            background: 'var(--bg-secondary)',
-            padding: 16,
-            overflow: 'auto',
-            flexShrink: 0,
-          }}
-        >
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              marginBottom: 16,
-              color: 'var(--text-secondary)',
-            }}
-          >
-            <Brain size={16} style={{ color: '#a78bfa' }} />
-            <span style={{ fontWeight: 500, fontSize: 13 }}>Agent Workflow</span>
-          </div>
-
-          {/* Workflow Nodes - n8n style */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 0,
-              padding: '24px 0',
-              minHeight: 100,
-            }}
-          >
-            {workflowNodes.map((node, index) => (
-              <div key={node.id} style={{ display: 'flex', alignItems: 'center' }}>
-                {/* Node - n8n style */}
-                <div
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: 8,
-                  }}
-                >
-                  {/* Node box */}
-                  <div style={{ position: 'relative' }}>
-                    <div
-                      style={{
-                        width: 50,
-                        height: 50,
-                        borderRadius: 8,
-                        background: '#1a1a2e',
-                        border: node.status === 'running'
-                          ? '2px solid #ff6d5a'
-                          : node.status === 'completed'
-                          ? '2px solid #1a1a2e'
-                          : '2px solid #2a2a3e',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        boxShadow: node.status === 'running'
-                          ? '0 0 0 3px rgba(255, 109, 90, 0.2)'
-                          : 'none',
-                        transition: 'all 0.2s ease',
-                      }}
-                    >
-                      {node.icon === 'input' && <Inbox size={22} color={node.status === 'idle' ? '#6b7280' : '#ff6d5a'} />}
-                      {node.icon === 'search' && <Search size={22} color={node.status === 'idle' ? '#6b7280' : '#a78bfa'} />}
-                      {node.icon === 'database' && <Database size={22} color={node.status === 'idle' ? '#6b7280' : '#22d3ee'} />}
-                      {node.icon === 'ai' && <Cpu size={22} color={node.status === 'idle' ? '#6b7280' : '#f472b6'} />}
-                      {node.icon === 'output' && <SendHorizontal size={22} color={node.status === 'idle' ? '#6b7280' : '#4ade80'} />}
-                    </div>
-                    {/* Success checkmark - n8n style (top right) */}
-                    {node.status === 'completed' && (
-                      <div style={{
-                        position: 'absolute',
-                        top: -6,
-                        right: -6,
-                        width: 18,
-                        height: 18,
-                        borderRadius: '50%',
-                        background: '#22c55e',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}>
-                        <Check size={12} color="white" strokeWidth={3} />
-                      </div>
-                    )}
-                    {/* Running indicator */}
-                    {node.status === 'running' && (
-                      <div style={{
-                        position: 'absolute',
-                        top: -4,
-                        right: -4,
-                        width: 12,
-                        height: 12,
-                        borderRadius: '50%',
-                        background: '#ff6d5a',
-                        animation: 'n8nPulse 1s ease-in-out infinite',
-                      }} />
-                    )}
-                  </div>
-                  {/* Label */}
-                  <span
-                    style={{
-                      fontSize: 11,
-                      color: node.status === 'idle' ? '#6b7280' : '#e5e7eb',
-                      fontWeight: 500,
-                      transition: 'all 0.2s ease',
-                    }}
-                  >
-                    {node.label}
-                  </span>
-                </div>
-
-                {/* Connector line - n8n style (curved bezier feel with straight line) */}
-                {index < workflowNodes.length - 1 && (
-                  <div
-                    style={{
-                      width: 50,
-                      height: 2,
-                      background: node.status === 'completed'
-                        ? '#4ade80'
-                        : '#2a2a3e',
-                      margin: '0 8px',
-                      marginBottom: 26,
-                      borderRadius: 1,
-                      transition: 'all 0.3s ease',
-                    }}
-                  />
-                )}
-              </div>
-            ))}
-          </div>
-
-        </div>
-
-        {/* Resizable Divider */}
-        <div
-          style={{
-            height: 6,
-            display: 'flex',
-            flexShrink: 0,
-          }}
-        >
-          {/* Horizontal resize area */}
-          <div
-            onMouseDown={handleMouseDown}
-            style={{
-              flex: 1,
-              background: isResizing || isResizingCorner ? 'var(--accent)' : 'var(--border-color)',
-              cursor: 'row-resize',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              transition: isResizing || isResizingCorner ? 'none' : 'background 0.15s',
-            }}
-          >
-            <div
-              style={{
-                width: 40,
-                height: 3,
-                borderRadius: 2,
-                background: isResizing || isResizingCorner ? 'white' : 'var(--text-tertiary)',
-              }}
-            />
-          </div>
-        </div>
-
         {/* Chat Window */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
           <div
@@ -576,7 +296,26 @@ export default function V2Page() {
                         </div>
                       ) : (
                         <>
-                          <div style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</div>
+                          {msg.role === 'assistant' ? (
+                            <div className="markdown-content">
+                              <ReactMarkdown
+                                remarkPlugins={[remarkGfm]}
+                                components={{
+                                  pre({ children }) {
+                                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                    const child = children as any
+                                    const className = child?.props?.className || ''
+                                    const content = String(child?.props?.children || '')
+                                    return <CodeBlock className={className}>{content}</CodeBlock>
+                                  },
+                                }}
+                              >
+                                {msg.content}
+                              </ReactMarkdown>
+                            </div>
+                          ) : (
+                            <div style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</div>
+                          )}
                           <span style={{ fontSize: 10, marginTop: 4, display: 'block', opacity: 0.6 }}>
                             {msg.timestamp.toLocaleTimeString('vi-VN')}
                           </span>
@@ -622,60 +361,26 @@ export default function V2Page() {
 
       {/* Right Panel Resize Divider */}
       <div
+        onMouseDown={handleRightMouseDown}
         style={{
           width: 6,
+          background: isResizingRight ? 'var(--accent)' : 'var(--border-color)',
+          cursor: 'col-resize',
           display: 'flex',
-          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
           flexShrink: 0,
+          transition: isResizingRight ? 'none' : 'background 0.15s',
         }}
       >
-        {/* Corner resize handle - at intersection of horizontal and vertical dividers */}
         <div
-          onMouseDown={handleCornerMouseDown}
           style={{
-            height: thinkingHeight + 6, // thinking height + divider height
-            width: 6,
-            background: isResizingCorner ? 'var(--accent)' : 'var(--border-color)',
-            cursor: 'move',
-            display: 'flex',
-            alignItems: 'flex-end',
-            justifyContent: 'center',
-            paddingBottom: 3,
-            transition: isResizingCorner ? 'none' : 'background 0.15s',
+            width: 3,
+            height: 40,
+            borderRadius: 2,
+            background: isResizingRight ? 'white' : 'var(--text-tertiary)',
           }}
-        >
-          {/* Corner indicator dots */}
-          <div
-            style={{
-              width: 4,
-              height: 4,
-              borderRadius: '50%',
-              background: isResizingCorner ? 'white' : 'var(--text-tertiary)',
-            }}
-          />
-        </div>
-        {/* Vertical resize area */}
-        <div
-          onMouseDown={handleRightMouseDown}
-          style={{
-            flex: 1,
-            background: isResizingRight || isResizingCorner ? 'var(--accent)' : 'var(--border-color)',
-            cursor: 'col-resize',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            transition: isResizingRight || isResizingCorner ? 'none' : 'background 0.15s',
-          }}
-        >
-          <div
-            style={{
-              width: 3,
-              height: 40,
-              borderRadius: 2,
-              background: isResizingRight || isResizingCorner ? 'white' : 'var(--text-tertiary)',
-            }}
-          />
-        </div>
+        />
       </div>
 
       {/* Right Panel: Exercises + Guides */}
@@ -922,10 +627,6 @@ export default function V2Page() {
         @keyframes spin {
           from { transform: rotate(0deg); }
           to { transform: rotate(360deg); }
-        }
-        @keyframes n8nPulse {
-          0%, 100% { opacity: 1; transform: scale(1); }
-          50% { opacity: 0.7; transform: scale(1.3); }
         }
       `}</style>
     </div>

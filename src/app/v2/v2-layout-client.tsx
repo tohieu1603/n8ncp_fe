@@ -55,6 +55,8 @@ function V2LayoutClientInner({ children }: { children: React.ReactNode }) {
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
   const [isLoadingConversations, setIsLoadingConversations] = useState(false)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(false)
 
   // Sync conversationId from URL on mount
   useEffect(() => {
@@ -74,19 +76,36 @@ function V2LayoutClientInner({ children }: { children: React.ReactNode }) {
     }
   }, [router])
 
+  const PAGE_SIZE = 10
+
   // Load conversations from API
   const loadConversations = useCallback(async () => {
     if (!isAuthenticated) return
     setIsLoadingConversations(true)
     try {
-      const data = await getConversations(1, 50)
-      setConversations(data.conversations)
+      const data = await getConversations(PAGE_SIZE, 0)
+      setConversations(data)
+      setHasMore(data.length >= PAGE_SIZE)
     } catch (error) {
       console.error('Failed to load conversations:', error)
     } finally {
       setIsLoadingConversations(false)
     }
   }, [isAuthenticated])
+
+  const loadMoreConversations = useCallback(async () => {
+    if (!isAuthenticated || isLoadingMore) return
+    setIsLoadingMore(true)
+    try {
+      const data = await getConversations(PAGE_SIZE, conversations.length)
+      setConversations(prev => [...prev, ...data])
+      setHasMore(data.length >= PAGE_SIZE)
+    } catch (error) {
+      console.error('Failed to load more conversations:', error)
+    } finally {
+      setIsLoadingMore(false)
+    }
+  }, [isAuthenticated, isLoadingMore, conversations.length])
 
   useEffect(() => {
     loadConversations()
@@ -179,7 +198,8 @@ function V2LayoutClientInner({ children }: { children: React.ReactNode }) {
               <p style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>Chưa có lịch sử chat</p>
             </div>
           ) : (
-            conversations.map((conv) => (
+            <>
+            {conversations.map((conv) => (
               <div
                 key={conv.id}
                 className={`history-item ${currentConversationId === conv.id ? 'active' : ''}`}
@@ -253,7 +273,36 @@ function V2LayoutClientInner({ children }: { children: React.ReactNode }) {
                   </div>
                 )}
               </div>
-            ))
+            ))}
+            {hasMore && (
+              <button
+                onClick={loadMoreConversations}
+                disabled={isLoadingMore}
+                style={{
+                  width: '100%',
+                  padding: '10px',
+                  margin: '8px 0 4px',
+                  background: 'transparent',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: 8,
+                  color: 'var(--text-secondary)',
+                  fontSize: 12,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  transition: 'all 0.15s',
+                }}
+              >
+                {isLoadingMore ? (
+                  <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+                ) : (
+                  'Xem thêm'
+                )}
+              </button>
+            )}
+            </>
           )}
         </div>
 
